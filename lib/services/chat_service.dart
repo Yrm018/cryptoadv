@@ -1,187 +1,167 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-
+import 'dart:async';
+import 'dart:convert';
+import '../core/database/database_service.dart';
 import '../models/chat_message_model.dart';
-import '../backend/crypto/cryptavance.dart'; // adapte le chemin si besoin
+import '../services/auth_service.dart';
+import '../backend/crypto/cryptavance.dart';
 
+/// ChatService — chat local avec hive.
+///
+/// Note : en mode local, le chat fonctionne entre comptes sur le même appareil.
+/// Pour un vrai chat entre appareils différents, il faudra un backend API (étape EC2).
 class ChatService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final _db = DatabaseService.instance;
+  final _authService = AuthService();
 
-  CollectionReference<Map<String, dynamic>> get _users =>
-      _firestore.collection('users');
+  // ── Stream simulé pour les messages ──────────────────────────────────────
+  final Map<String, StreamController<List<ChatMessageModel>>> _msgControllers = {};
+  final StreamController<List<Map<String, dynamic>>> _convController =
+      StreamController<List<Map<String, dynamic>>>.broadcast();
 
-  CollectionReference<Map<String, dynamic>> get _conversations =>
-      _firestore.collection('conversations');
-
-  CollectionReference<Map<String, dynamic>> get _messages =>
-      _firestore.collection('messages');
-
-  Future<QueryDocumentSnapshot<Map<String, dynamic>>?> getUserByEmail(
-      String email,
-      ) async {
-    final normalizedEmail = email.trim().toLowerCase();
-
-    final result = await _users
-        .where('email', isEqualTo: normalizedEmail)
-        .limit(1)
-        .get();
-
-    if (result.docs.isEmpty) return null;
-    return result.docs.first;
-  }
-
+  // ── Helpers ───────────────────────────────────────────────────────────────
   String _buildConversationId(String uid1, String uid2) {
     final ids = [uid1, uid2]..sort();
     return '${ids[0]}_${ids[1]}';
   }
 
-  String _algoLabel(String algorithm) {
-    switch (algorithm) {
-      case 'chacha20':
-        return 'ChaCha20-Poly1305';
-      case 'aes-gcm':
-      default:
-        return 'AES-GCM';
-    }
+  String _generateId() {
+    final t = DateTime.now().millisecondsSinceEpoch;
+    return '${t}_${(t * 9301 + 49297) % 233280}';
   }
 
+  String _algoLabel(String algorithm) =>
+      algorithm == 'chacha20' ? 'ChaCha20-Poly1305' : 'AES-GCM';
+
+  // ── Chercher un user par email (dans hive) ────────────────────────────────
+  Map<String, dynamic>? getUserByEmail(String email) {
+    final normalized = email.trim().toLowerCase();
+    final found = _db.users.values.firstWhere(
+      (u) => u['email'] == normalized,
+      orElse: () => {},
+    );
+    return found.isEmpty ? null : Map<String, dynamic>.from(found);
+  }
+
+  // ── Créer ou récupérer une conversation ───────────────────────────────────
   Future<String> getOrCreateConversation(
-      String otherUserId,
-      String otherUserEmail,
-      ) async {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null) {
-      throw Exception("Utilisateur non connecté");
-    }
+    String otherUserId,
+    String otherUserEmail,
+  ) async {
+    final currentUser = await _authService.currentUser;
+    if (currentUser == null) throw Exception("Utilisateur non connecté");
 
-    final conversationId = _buildConversationId(currentUser.uid, otherUserId);
-    final conversationRef = _conversations.doc(conversationId);
+    final conversationId = _buildConversationId(currentUser.id, otherUserId);
 
-    final existing = await conversationRef.get();
-    if (existing.exists) {
+    // Vérifier si la conversation existe déjà
+    if (_db.conversations.containsKey(conversationId)) {
       return conversationId;
     }
 
-    final otherUserDoc = await _users.doc(otherUserId).get();
-    final otherUserData = otherUserDoc.data();
+    // Récupérer les infos du destinataire
+    final otherUserData = _db.users.get(otherUserId);
+    final receiverEmail = otherUserData?['email'] ?? otherUserEmail;
+    final receiverName = otherUserData?['displayName'] ?? otherUserEmail;
 
-    final currentEmail = (currentUser.email ?? '').trim().toLowerCase();
-    final currentName =
-    (currentUser.displayName ?? currentUser.email ?? 'Utilisateur').trim();
-
-    final receiverEmail =
-    (otherUserData?['email'] ?? otherUserEmail).toString().trim().toLowerCase();
-    final receiverName =
-    (otherUserData?['displayName'] ?? otherUserData?['name'] ?? otherUserEmail)
-        .toString()
-        .trim();
-
-    final participantIds = [currentUser.uid, otherUserId];
-    final participantEmails = [currentEmail, receiverEmail];
-    final participantNames = [currentName, receiverName];
-
-    await conversationRef.set({
-      'participants': [currentUser.uid, otherUserId],
-      'participantEmails': [currentEmail, receiverEmail],
-      'createdAt': FieldValue.serverTimestamp(),
-      'lastMessageAt': FieldValue.serverTimestamp(),
+    await _db.conversations.put(conversationId, {
+      'id': conversationId,
+      'participants': jsonEncode([currentUser.id, otherUserId]),
+      'participantEmails': jsonEncode([currentUser.email, receiverEmail]),
+      'participantNames': jsonEncode([currentUser.displayName, receiverName]),
+      'lastMessageAt': DateTime.now().toIso8601String(),
       'lastMessagePreview': 'Conversation sécurisée',
-      'type': 'direct',
     });
 
     return conversationId;
   }
 
+  // ── Conversations récentes (Stream) ───────────────────────────────────────
   Stream<List<Map<String, dynamic>>> getRecentConversations() {
-    final currentUser = _auth.currentUser;
+    _pushConversationUpdate();
+    return _convController.stream;
+  }
+
+  void _pushConversationUpdate() async {
+    final currentUser = await _authService.currentUser;
     if (currentUser == null) {
-      return const Stream.empty();
+      _convController.add([]);
+      return;
     }
 
-    return _conversations
-        .where('participants', arrayContains: currentUser.uid)
-        .orderBy('lastMessageAt', descending: true)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        final data = doc.data();
+    final convs = _db.conversations.values
+        .where((c) {
+          final ids = List<String>.from(jsonDecode(c['participants'] ?? '[]'));
+          return ids.contains(currentUser.id);
+        })
+        .map((c) {
+          final emails = List<String>.from(
+              jsonDecode(c['participantEmails'] ?? '[]'));
+          final ids = List<String>.from(jsonDecode(c['participants'] ?? '[]'));
+          final otherIdx = ids.indexWhere((id) => id != currentUser.id);
+          final email = emails.length > otherIdx && otherIdx >= 0
+              ? emails[otherIdx]
+              : 'Utilisateur';
+          return {
+            'conversationId': c['id'],
+            'email': email,
+            'name': email,
+            'lastMessage': c['lastMessagePreview'] ?? 'Conversation sécurisée',
+            'updatedAt': c['lastMessageAt'],
+          };
+        })
+        .toList()
+      ..sort((a, b) => (b['updatedAt'] as String)
+          .compareTo(a['updatedAt'] as String));
 
-        final participants =
-        List<String>.from(data['participants'] ?? const []);
-        final participantEmails =
-        List<String>.from(data['participantEmails'] ?? const []);
-
-        int otherIndex =
-        participants.indexWhere((id) => id != currentUser.uid);
-
-        if (otherIndex < 0) {
-          otherIndex = 0;
-        }
-
-        final email = participantEmails.length > otherIndex
-            ? participantEmails[otherIndex]
-            : 'Utilisateur';
-
-        return {
-          'conversationId': doc.id,
-          'email': email,
-          'name': email,
-          'lastMessage': data['lastMessagePreview'] ?? 'Conversation sécurisée',
-          'updatedAt': data['lastMessageAt'],
-        };
-      }).toList();
-    });
+    if (!_convController.isClosed) _convController.add(convs);
   }
+
+  // ── Messages d'une conversation (Stream) ──────────────────────────────────
   Stream<List<ChatMessageModel>> getMessages(String conversationId) {
-    return _messages
-        .where('conversationId', isEqualTo: conversationId)
-        .orderBy('createdAt', descending: false)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => ChatMessageModel.fromMap(doc.id, doc.data()))
-          .toList();
-    });
+    if (!_msgControllers.containsKey(conversationId)) {
+      _msgControllers[conversationId] =
+          StreamController<List<ChatMessageModel>>.broadcast();
+    }
+    _pushMessageUpdate(conversationId);
+    return _msgControllers[conversationId]!.stream;
   }
 
+  void _pushMessageUpdate(String conversationId) async {
+    final box = await _db.messagesBox(conversationId);
+    final msgs = box.values
+        .map((m) => ChatMessageModel.fromMap(
+            m['id'] ?? '', Map<String, dynamic>.from(m)))
+        .toList()
+      ..sort((a, b) =>
+          (a.createdAt ?? DateTime(0)).compareTo(b.createdAt ?? DateTime(0)));
+
+    final ctrl = _msgControllers[conversationId];
+    if (ctrl != null && !ctrl.isClosed) ctrl.add(msgs);
+  }
+
+  // ── Envoyer un message ────────────────────────────────────────────────────
   Future<void> sendMessageToEmail({
     required String receiverEmail,
     required String text,
     required String encryptionKey,
     required String algorithm,
   }) async {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null) {
-      throw Exception("Utilisateur non connecté");
-    }
+    final currentUser = await _authService.currentUser;
+    if (currentUser == null) throw Exception("Utilisateur non connecté");
 
-    final normalizedReceiverEmail = receiverEmail.trim().toLowerCase();
-    final userDoc = await getUserByEmail(normalizedReceiverEmail);
-
-    if (userDoc == null) {
+    final normalized = receiverEmail.trim().toLowerCase();
+    final receiverData = getUserByEmail(normalized);
+    if (receiverData == null) {
       throw Exception("Aucun utilisateur trouvé avec cet email");
     }
 
-    if (userDoc.id == currentUser.uid) {
+    final receiverId = receiverData['id'] as String;
+    if (receiverId == currentUser.id) {
       throw Exception("Tu ne peux pas t'envoyer un message à toi-même");
     }
 
-    final receiverData = userDoc.data();
-    final receiverId = userDoc.id;
-    final receiverName =
-    (receiverData['displayName'] ?? receiverData['name'] ?? normalizedReceiverEmail)
-        .toString()
-        .trim();
-
-    final senderEmail = (currentUser.email ?? '').trim().toLowerCase();
-    final senderName =
-    (currentUser.displayName ?? currentUser.email ?? 'Utilisateur').trim();
-
-    final conversationId = await getOrCreateConversation(
-      receiverId,
-      normalizedReceiverEmail,
-    );
+    final receiverName = receiverData['displayName'] ?? normalized;
+    final conversationId =
+        await getOrCreateConversation(receiverId, normalized);
 
     final payload = await CryptoAvance.encryptMessage(
       message: text,
@@ -189,46 +169,47 @@ class ChatService {
       algorithm: algorithm,
     );
 
-    await _messages.add({
+    final msgId = _generateId();
+    final now = DateTime.now().toIso8601String();
+    final box = await _db.messagesBox(conversationId);
+
+    await box.put(msgId, {
+      'id': msgId,
       'conversationId': conversationId,
-      'senderId': currentUser.uid,
-      'senderEmail': senderEmail,
-      'senderName': senderName,
+      'senderId': currentUser.id,
+      'senderEmail': currentUser.email,
+      'senderName': currentUser.displayName,
       'receiverId': receiverId,
-      'receiverEmail': normalizedReceiverEmail,
+      'receiverEmail': normalized,
       'receiverName': receiverName,
       'cipherText': payload.cipherText,
       'nonce': payload.nonce,
       'mac': payload.mac,
       'algorithm': payload.algorithm,
-      'createdAt': FieldValue.serverTimestamp(),
+      'createdAt': now,
     });
 
-    await _conversations.doc(conversationId).set({
-      'participants': [currentUser.uid, receiverId],
-      'participantEmails': [senderEmail, normalizedReceiverEmail],
-      'lastMessageAt': FieldValue.serverTimestamp(),
-      'lastMessagePreview': 'Message chiffré (${_algoLabel(payload.algorithm)})',
-      'type': 'direct',
-    }, SetOptions(merge: true));
+    // Mettre à jour la conversation
+    final conv = Map<String, dynamic>.from(
+        _db.conversations.get(conversationId) ?? {});
+    conv['lastMessageAt'] = now;
+    conv['lastMessagePreview'] =
+        'Message chiffré (${_algoLabel(payload.algorithm)})';
+    await _db.conversations.put(conversationId, conv);
+
+    _pushMessageUpdate(conversationId);
+    _pushConversationUpdate();
   }
 
-  Future<String> decryptMessage(
-      ChatMessageModel message,
-      String key,
-      ) async {
-    final trimmedKey = key.trim();
-
-    if (trimmedKey.isEmpty) {
-      throw Exception("Clé vide");
-    }
-
+  // ── Déchiffrer un message ─────────────────────────────────────────────────
+  Future<String> decryptMessage(ChatMessageModel message, String key) async {
+    if (key.trim().isEmpty) throw Exception("Clé vide");
     try {
       return await CryptoAvance.decryptMessage(
         cipherText: message.cipherText,
         nonce: message.nonce,
         mac: message.mac,
-        key: trimmedKey,
+        key: key.trim(),
         algorithm: message.algorithm.isEmpty ? 'aes-gcm' : message.algorithm,
       );
     } catch (_) {

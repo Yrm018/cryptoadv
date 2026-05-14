@@ -1,156 +1,154 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../core/database/database_service.dart';
 
+// ─── Exception personnalisée ──────────────────────────────────────────────────
+class AuthException implements Exception {
+  final String code;
+  final String message;
+  const AuthException({required this.code, required this.message});
+  @override
+  String toString() => 'AuthException[$code]: $message';
+}
+
+// ─── Modèle local ─────────────────────────────────────────────────────────────
+class LocalUser {
+  final String id;
+  final String email;
+  final String displayName;
+  const LocalUser({required this.id, required this.email, required this.displayName});
+
+  factory LocalUser.fromMap(Map map) => LocalUser(
+    id: map['id'] as String,
+    email: map['email'] as String,
+    displayName: map['displayName'] as String,
+  );
+}
+
+const _kCurrentUserId = 'current_user_id';
+
+// ─── AuthService ──────────────────────────────────────────────────────────────
 class AuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  final _db = DatabaseService.instance;
 
-  User? get currentUser => _auth.currentUser;
+  // ── Hachage SHA-256 ───────────────────────────────────────────────────────
+  String _hashPassword(String password) =>
+      sha256.convert(utf8.encode(password)).toString();
 
-  Stream<User?> get authStateChanges => _auth.authStateChanges();
-
-  Future<void> _saveUserToFirestore(User user) async {
-    await _firestore.collection('users').doc(user.uid).set({
-      'uid': user.uid,
-      'email': user.email ?? '',
-      'displayName': user.displayName ?? user.email ?? 'Utilisateur',
-      'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+  // ── ID unique ─────────────────────────────────────────────────────────────
+  String _generateId() {
+    final t = DateTime.now().millisecondsSinceEpoch;
+    return '${t}_${(t * 9301 + 49297) % 233280}';
   }
 
-  Future<UserCredential> signUp({
+  // ── currentUser ───────────────────────────────────────────────────────────
+  //
+  // Hive : box.get(key) → retourne la Map stockée à cette clé
+  //   Si la clé n'existe pas → retourne null
+  //
+  Future<LocalUser?> get currentUser async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString(_kCurrentUserId);
+    if (userId == null) return null;
+
+    // Hive : chaque user est stocké à la clé = son id
+    // users.get(userId) → Map{'id':…, 'email':…, …} ou null
+    final userData = _db.users.get(userId);
+    if (userData == null) {
+      await _clearSession();
+      return null;
+    }
+    return LocalUser.fromMap(userData);
+  }
+
+  // ── signUp ────────────────────────────────────────────────────────────────
+  Future<LocalUser> signUp({
+    required String email,
+    required String password,
+    String? displayName,
+  }) async {
+    final normalizedEmail = email.trim().toLowerCase();
+
+    // Hive n'a pas de WHERE — on parcourt toutes les valeurs
+    // .values → Iterable de toutes les Maps stockées dans le box
+    final emailExists = _db.users.values.any(
+      (u) => u['email'] == normalizedEmail,
+    );
+
+    if (emailExists) {
+      throw const AuthException(
+        code: 'email-already-in-use',
+        message: 'Un compte existe déjà avec cet email.',
+      );
+    }
+
+    if (password.length < 6) {
+      throw const AuthException(
+        code: 'weak-password',
+        message: 'Le mot de passe doit contenir au moins 6 caractères.',
+      );
+    }
+
+    final userId = _generateId();
+    final name = displayName ?? normalizedEmail.split('@').first;
+
+    // Hive : box.put(key, value)
+    // On stocke chaque user avec son id comme clé
+    await _db.users.put(userId, {
+      'id': userId,
+      'email': normalizedEmail,
+      'passwordHash': _hashPassword(password),
+      'displayName': name,
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+
+    await _saveSession(userId);
+    return LocalUser(id: userId, email: normalizedEmail, displayName: name);
+  }
+
+  // ── signIn ────────────────────────────────────────────────────────────────
+  Future<LocalUser> signIn({
     required String email,
     required String password,
   }) async {
-    final credential = await _auth.createUserWithEmailAndPassword(
-      email: email,
-      password: password,
+    final normalizedEmail = email.trim().toLowerCase();
+
+    // Chercher le user par email dans toutes les valeurs du box
+    final userData = _db.users.values.firstWhere(
+      (u) => u['email'] == normalizedEmail,
+      orElse: () => {},
     );
 
-    if (credential.user != null) {
-      await _saveUserToFirestore(credential.user!);
+    if (userData.isEmpty) {
+      throw const AuthException(
+        code: 'user-not-found',
+        message: 'Aucun compte trouvé avec cet email.',
+      );
     }
 
-    return credential;
+    if (userData['passwordHash'] != _hashPassword(password)) {
+      throw const AuthException(
+        code: 'wrong-password',
+        message: 'Mot de passe incorrect.',
+      );
+    }
+
+    final user = LocalUser.fromMap(userData);
+    await _saveSession(user.id);
+    return user;
   }
 
-  Future<UserCredential> signIn({
-    required String email,
-    required String password,
-  }) async {
-    final credential = await _auth.signInWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
+  // ── signOut ───────────────────────────────────────────────────────────────
+  Future<void> signOut() async => _clearSession();
 
-    if (credential.user != null) {
-      await _saveUserToFirestore(credential.user!);
-    }
-
-    return credential;
+  Future<void> _saveSession(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kCurrentUserId, userId);
   }
 
-  Future<UserCredential?> signInWithGoogle() async {
-    try {
-      UserCredential? credential;
-
-      if (kIsWeb) {
-        credential = await _auth.signInWithPopup(GoogleAuthProvider());
-      } else {
-        credential = await _auth.signInWithProvider(GoogleAuthProvider());
-      }
-
-      if (credential.user != null) {
-        await _saveUserToFirestore(credential.user!);
-      }
-
-      return credential;
-    } catch (e) {
-      print('Erreur Google: $e');
-      rethrow;
-    }
-  }
-
-  Future<UserCredential?> signInWithFacebook() async {
-    try {
-      UserCredential? credential;
-
-      if (kIsWeb) {
-        credential = await _auth.signInWithPopup(FacebookAuthProvider());
-      } else {
-        final result = await FacebookAuth.instance.login();
-
-        if (result.status == LoginStatus.success) {
-          final authCredential = FacebookAuthProvider.credential(
-            result.accessToken!.token,
-          );
-          credential = await _auth.signInWithCredential(authCredential);
-        } else {
-          credential = await _auth.signInWithProvider(FacebookAuthProvider());
-        }
-      }
-
-      if (credential?.user != null) {
-        await _saveUserToFirestore(credential!.user!);
-      }
-
-      return credential;
-    } catch (e) {
-      print('Erreur Facebook: $e');
-
-      try {
-        final credential = await _auth.signInWithProvider(
-          FacebookAuthProvider(),
-        );
-
-        if (credential.user != null) {
-          await _saveUserToFirestore(credential.user!);
-        }
-
-        return credential;
-      } catch (_) {
-        rethrow;
-      }
-    }
-  }
-
-  Future<UserCredential?> signInWithGitHub() async {
-    try {
-      final githubProvider = GithubAuthProvider();
-
-      final credential = kIsWeb
-          ? await _auth.signInWithPopup(githubProvider)
-          : await _auth.signInWithProvider(githubProvider);
-
-      if (credential.user != null) {
-        await _saveUserToFirestore(credential.user!);
-      }
-
-      return credential;
-    } catch (e) {
-      print('Erreur GitHub: $e');
-      rethrow;
-    }
-  }
-
-  Future<void> signOut() async {
-    try {
-      if (!kIsWeb) {
-        try {
-          await _googleSignIn.signOut();
-        } catch (_) {}
-        try {
-          await FacebookAuth.instance.logOut();
-        } catch (_) {}
-      }
-
-      await _auth.signOut();
-    } catch (e) {
-      print('Erreur SignOut: $e');
-    }
+  Future<void> _clearSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kCurrentUserId);
   }
 }

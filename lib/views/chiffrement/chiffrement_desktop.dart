@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cryptoadv/backend/crypto/cesar.dart';
 import 'package:cryptoadv/backend/crypto/vigenere.dart';
 import 'package:cryptoadv/components/backround.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/history_service.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/common/app_navbar.dart';
 
 enum CipherType { cesar, vigenereNormal, vigenereAvance, vigenerePermute }
@@ -42,10 +42,10 @@ class _ChiffrementDesktopState extends State<ChiffrementDesktop> {
   CipherOption get currentCipher => cipherOptions.firstWhere((e) => e.type == selectedCipher);
 
   Future<void> _saveHistory({required String inputPreview, required String result}) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = await AuthService().currentUser;
     if (user == null) return;
     String algoLabel = selectedCipher.toString().split('.').last;
-    await _historyService.addHistoryItem(userId: user.uid, type: 'cipher', algorithm: algoLabel, inputPreview: inputPreview.length > 80 ? '${inputPreview.substring(0, 80)}...' : inputPreview, result: result, isEncrypted: true);
+    await _historyService.addHistoryItem(userId: user.id, type: 'cipher', algorithm: algoLabel, inputPreview: inputPreview.length > 80 ? '${inputPreview.substring(0, 80)}...' : inputPreview, result: result, isEncrypted: true);
   }
 
   void lancerChiffrement(bool encrypt) async {

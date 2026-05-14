@@ -12,14 +12,10 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Firebase
-  firebase_core: ^4.6.0
-  firebase_auth: ^6.3.0
-  cloud_firestore: ^6.2.0
-
-  # Auth
-  google_sign_in: ^6.3.0
-  flutter_facebook_auth: ^6.2.0
+  # Base de données — hive fonctionne sur mobile, desktop ET web (IndexedDB)
+  # Aucune génération de code requise, zéro dépendance native
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
 
   # Crypto
   crypto: ^3.0.7

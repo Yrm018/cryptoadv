@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import '../../components/backround.dart';
 import '../../components/logo.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
-import '../home/home_page.dart';
 
 class AuthMobile extends StatefulWidget {
   const AuthMobile({super.key});
@@ -13,7 +13,7 @@ class AuthMobile extends StatefulWidget {
 }
 
 class _AuthMobileState extends State<AuthMobile> {
-  final AuthService _authService = AuthService();
+  // AuthProvider gère la navigation automatiquement via AppRoot
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
@@ -44,15 +44,17 @@ class _AuthMobileState extends State<AuthMobile> {
     });
 
     try {
+      final auth = context.read<AuthProvider>();
       if (isLogin) {
-        await _authService.signIn(email: email, password: password);
+        await auth.signIn(email: email, password: password);
       } else {
-        await _authService.signUp(email: email, password: password);
+        await auth.signUp(email: email, password: password);
       }
-      if (!mounted) return;
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomePage()));
-    } on FirebaseAuthException catch (e) {
-      setState(() => errorMessage = e.message ?? 'Erreur d\'authentification');
+      // AppRoot écoute AuthProvider → navigue vers HomePage automatiquement
+    } on AuthException catch (e) {
+      setState(() => errorMessage = e.message);
+    } catch (e) {
+      setState(() => errorMessage = 'Une erreur est survenue : $e');
     } finally {
       if (mounted) setState(() => isLoading = false);
     }

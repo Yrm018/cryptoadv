@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import '../../components/backround.dart';
 import '../../components/logo.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
-import '../home/home_page.dart';
 
 class AuthDesktop extends StatefulWidget {
   const AuthDesktop({super.key});
@@ -13,7 +13,8 @@ class AuthDesktop extends StatefulWidget {
 }
 
 class _AuthDesktopState extends State<AuthDesktop> {
-  final AuthService _authService = AuthService();
+  // On supprime AuthService direct — on passe par AuthProvider
+  // AuthProvider notifie AppRoot qui navigue automatiquement vers HomePage
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
@@ -34,25 +35,20 @@ class _AuthDesktopState extends State<AuthDesktop> {
     if (email.isEmpty || password.isEmpty) { setState(() => errorMessage = 'Veuillez remplir tous les champs.'); return; }
     setState(() { isLoading = true; errorMessage = ''; });
     try {
-      if (isLogin) { await _authService.signIn(email: email, password: password); }
-      else { await _authService.signUp(email: email, password: password); }
-      if (!mounted) return;
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const HomePage()));
-    } on FirebaseAuthException catch (e) {
-      setState(() => errorMessage = _mapFirebaseError(e));
+      final auth = context.read<AuthProvider>();
+      if (isLogin) {
+        await auth.signIn(email: email, password: password);
+      } else {
+        await auth.signUp(email: email, password: password);
+      }
+      // Pas besoin de Navigator.pushReplacement — AppRoot écoute AuthProvider
+      // et navigue automatiquement vers HomePage quand isAuthenticated devient true
+    } on AuthException catch (e) {
+      setState(() => errorMessage = e.message);
     } catch (e) {
       setState(() => errorMessage = 'Une erreur est survenue : $e');
     } finally {
       if (mounted) setState(() => isLoading = false);
-    }
-  }
-
-  String _mapFirebaseError(FirebaseAuthException e) {
-    switch (e.code) {
-      case 'user-not-found': return 'Aucun utilisateur trouvé.';
-      case 'wrong-password': return 'Mot de passe incorrect.';
-      case 'invalid-credential': return 'Email ou mot de passe invalide.';
-      default: return e.message ?? 'Erreur inconnue.';
     }
   }
 

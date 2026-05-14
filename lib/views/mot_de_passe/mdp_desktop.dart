@@ -3,8 +3,8 @@ import 'package:cryptoadv/widgets/common/app_navbar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../components/backround.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/history_service.dart';
+import '../../services/auth_service.dart';
 
 class MdpDesktop extends StatefulWidget {
   const MdpDesktop({super.key});
@@ -25,9 +25,9 @@ class _MdpDesktopState extends State<MdpDesktop> {
   PasswordAnalysis analysis = analyzePassword("");
 
   Future<void> _saveHistory(String password) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = await AuthService().currentUser;
     if (user == null) return;
-    await _historyService.addHistoryItem(userId: user.uid, type: 'password', algorithm: 'Generator', inputPreview: 'Mot de passe généré', result: password, isEncrypted: false);
+    await _historyService.addHistoryItem(userId: user.id, type: 'password', algorithm: 'Generator', inputPreview: 'Mot de passe généré', result: password, isEncrypted: false);
   }
 
   @override

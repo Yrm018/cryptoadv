@@ -1,5 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
+// Import Firestore supprimé — on utilise DateTime standard partout
 class ChatMessageModel {
   final String id;
   final String conversationId;
@@ -31,18 +30,12 @@ class ChatMessageModel {
     required this.createdAt,
   });
 
-  factory ChatMessageModel.fromMap(
-      String id,
-      Map<String, dynamic> map,
-      ) {
-    final createdAtRaw = map['createdAt'];
-
+  factory ChatMessageModel.fromMap(String id, Map<String, dynamic> map) {
+    // Plus de Timestamp Firestore — createdAt est maintenant un String ISO 8601
+    final raw = map['createdAt'];
     DateTime? createdAt;
-    if (createdAtRaw is Timestamp) {
-      createdAt = createdAtRaw.toDate();
-    } else if (createdAtRaw is DateTime) {
-      createdAt = createdAtRaw;
-    }
+    if (raw is String) createdAt = DateTime.tryParse(raw);
+    if (raw is DateTime) createdAt = raw;
 
     return ChatMessageModel(
       id: id,
@@ -61,52 +54,31 @@ class ChatMessageModel {
     );
   }
 
-  Map<String, dynamic> toMap() {
-    return {
-      'conversationId': conversationId,
-      'senderId': senderId,
-      'senderEmail': senderEmail,
-      'senderName': senderName,
-      'receiverId': receiverId,
-      'receiverEmail': receiverEmail,
-      'receiverName': receiverName,
-      'cipherText': cipherText,
-      'nonce': nonce,
-      'mac': mac,
-      'algorithm': algorithm,
-      'createdAt': createdAt,
-    };
-  }
+  Map<String, dynamic> toMap() => {
+    'conversationId': conversationId,
+    'senderId': senderId,
+    'senderEmail': senderEmail,
+    'senderName': senderName,
+    'receiverId': receiverId,
+    'receiverEmail': receiverEmail,
+    'receiverName': receiverName,
+    'cipherText': cipherText,
+    'nonce': nonce,
+    'mac': mac,
+    'algorithm': algorithm,
+    'createdAt': createdAt?.toIso8601String(),
+  };
 
   ChatMessageModel copyWith({
-    String? id,
-    String? conversationId,
-    String? senderId,
-    String? senderEmail,
-    String? senderName,
-    String? receiverId,
-    String? receiverEmail,
-    String? receiverName,
-    String? cipherText,
-    String? nonce,
-    String? mac,
-    String? algorithm,
-    DateTime? createdAt,
-  }) {
-    return ChatMessageModel(
-      id: id ?? this.id,
-      conversationId: conversationId ?? this.conversationId,
-      senderId: senderId ?? this.senderId,
-      senderEmail: senderEmail ?? this.senderEmail,
-      senderName: senderName ?? this.senderName,
-      receiverId: receiverId ?? this.receiverId,
-      receiverEmail: receiverEmail ?? this.receiverEmail,
-      receiverName: receiverName ?? this.receiverName,
-      cipherText: cipherText ?? this.cipherText,
-      nonce: nonce ?? this.nonce,
-      mac: mac ?? this.mac,
-      algorithm: algorithm ?? this.algorithm,
-      createdAt: createdAt ?? this.createdAt,
-    );
-  }
+    String? id, String? conversationId, String? senderId, String? senderEmail,
+    String? senderName, String? receiverId, String? receiverEmail, String? receiverName,
+    String? cipherText, String? nonce, String? mac, String? algorithm, DateTime? createdAt,
+  }) => ChatMessageModel(
+    id: id ?? this.id, conversationId: conversationId ?? this.conversationId,
+    senderId: senderId ?? this.senderId, senderEmail: senderEmail ?? this.senderEmail,
+    senderName: senderName ?? this.senderName, receiverId: receiverId ?? this.receiverId,
+    receiverEmail: receiverEmail ?? this.receiverEmail, receiverName: receiverName ?? this.receiverName,
+    cipherText: cipherText ?? this.cipherText, nonce: nonce ?? this.nonce,
+    mac: mac ?? this.mac, algorithm: algorithm ?? this.algorithm, createdAt: createdAt ?? this.createdAt,
+  );
 }

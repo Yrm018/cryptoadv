@@ -1,5 +1,5 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/history_service.dart';
+import '../../services/auth_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../components/backround.dart';
@@ -27,11 +27,11 @@ class _HachageMobileState extends State<HachageMobile> {
     required String inputPreview,
     required String result,
   }) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = await AuthService().currentUser;
     if (user == null) return;
 
     await _historyService.addHistoryItem(
-      userId: user.uid,
+      userId: user.id,
       type: 'hash',
       algorithm: selectedAlgo.toUpperCase(),
       inputPreview: inputPreview.length > 80

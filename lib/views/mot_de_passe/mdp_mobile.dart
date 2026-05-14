@@ -2,8 +2,8 @@ import 'package:cryptoadv/backend/crypto/mdp.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../components/backround.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/history_service.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/common/app_drawer.dart';
 
 class MdpMobile extends StatefulWidget {
@@ -25,9 +25,9 @@ class _MdpMobileState extends State<MdpMobile> {
   PasswordAnalysis analysis = analyzePassword("");
 
   Future<void> _saveHistory(String password) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = await AuthService().currentUser;
     if (user == null) return;
-    await _historyService.addHistoryItem(userId: user.uid, type: 'password', algorithm: 'Generator', inputPreview: 'Mot de passe généré', result: password, isEncrypted: false);
+    await _historyService.addHistoryItem(userId: user.id, type: 'password', algorithm: 'Generator', inputPreview: 'Mot de passe généré', result: password, isEncrypted: false);
   }
 
   @override
