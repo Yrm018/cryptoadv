@@ -1,0 +1,42 @@
+name: cryptoadv
+description: CryptYRM - Application de cryptographie et sécurité.
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.10.7 <4.0.0'
+  flutter: '>=3.38.4'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase
+  firebase_core: ^4.6.0
+  firebase_auth: ^6.3.0
+  cloud_firestore: ^6.2.0
+
+  # Auth
+  google_sign_in: ^6.3.0
+  flutter_facebook_auth: ^6.2.0
+
+  # Crypto
+  crypto: ^3.0.7
+  cryptography: ^2.9.0
+  pointycastle: ^3.9.1
+
+  # UI & Utils
+  cupertino_icons: ^1.0.8
+  provider: ^6.1.5+1
+  shared_preferences: ^2.5.4
+  url_launcher: ^6.3.2
+  file_picker: ^8.3.7
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.3
+
+flutter:
+  uses-material-design: true
