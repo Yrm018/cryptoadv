@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cryptoadv/backend/crypto/cesar.dart';
 import 'package:cryptoadv/backend/crypto/vigenere.dart';
 import 'package:cryptoadv/components/backround.dart';
+import '../../core/localization/app_l10n.dart';
 import '../../services/history_service.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/common/app_drawer.dart';
@@ -10,18 +11,18 @@ enum CipherType { cesar, vigenereNormal, vigenereAvance, vigenerePermute }
 
 class CipherOption {
   final CipherType type;
-  final String label;
+  final String labelKey;
   final bool needsKey;
   final bool needsShift;
-  final String description;
-  const CipherOption({required this.type, required this.label, required this.needsKey, required this.needsShift, required this.description});
+  final String descriptionKey;
+  const CipherOption({required this.type, required this.labelKey, required this.needsKey, required this.needsShift, required this.descriptionKey});
 }
 
 const List<CipherOption> cipherOptions = [
-  CipherOption(type: CipherType.cesar, label: "César", needsKey: false, needsShift: true, description: "Décalage simple des lettres."),
-  CipherOption(type: CipherType.vigenereNormal, label: "Vigenère", needsKey: true, needsShift: false, description: "Chiffre uniquement les lettres."),
-  CipherOption(type: CipherType.vigenereAvance, label: "Vigenère avancé", needsKey: true, needsShift: false, description: "Chiffre aussi les espaces."),
-  CipherOption(type: CipherType.vigenerePermute, label: "Vigenère permuté", needsKey: true, needsShift: false, description: "Permutation puis Vigenère."),
+  CipherOption(type: CipherType.cesar, labelKey: "cesar_label", needsKey: false, needsShift: true, descriptionKey: "cesar_desc"),
+  CipherOption(type: CipherType.vigenereNormal, labelKey: "vigenere_label", needsKey: true, needsShift: false, descriptionKey: "vigenere_desc"),
+  CipherOption(type: CipherType.vigenereAvance, labelKey: "vigenere_avance_label", needsKey: true, needsShift: false, descriptionKey: "vigenere_avance_desc"),
+  CipherOption(type: CipherType.vigenerePermute, labelKey: "vigenere_permute_label", needsKey: true, needsShift: false, descriptionKey: "vigenere_permute_desc"),
 ];
 
 class ChiffrementMobile extends StatefulWidget {
@@ -76,9 +77,11 @@ class _ChiffrementMobileState extends State<ChiffrementMobile> {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final l = AppL10n.of(context);
+
     return Scaffold(
       drawer: const AppDrawer(currentPage: 'chiffrement'),
-      appBar: AppBar(title: const Text('Chiffrement'), backgroundColor: Colors.transparent, elevation: 0, iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black)),
+      appBar: AppBar(title: Text(l.t('chiffrement')), backgroundColor: Colors.transparent, elevation: 0, iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black)),
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
@@ -93,38 +96,38 @@ class _ChiffrementMobileState extends State<ChiffrementMobile> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _label("Algorithme", isDark),
+                        _label(l.t('algo_label'), isDark),
                         const SizedBox(height: 10),
                         DropdownButtonFormField<CipherType>(
                           value: selectedCipher,
                           dropdownColor: isDark ? const Color(0xFF0F1B38) : Colors.white,
-                          decoration: _fieldDeco("Choisir", isDark),
+                          decoration: _fieldDeco(l.t('cipher_choice_hint'), isDark),
                           style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 14),
-                          items: cipherOptions.map((o) => DropdownMenuItem(value: o.type, child: Text(o.label))).toList(),
+                          items: cipherOptions.map((o) => DropdownMenuItem(value: o.type, child: Text(l.t(o.labelKey)))).toList(),
                           onChanged: (v) => setState(() { selectedCipher = v!; resultat = ""; }),
                         ),
                         const SizedBox(height: 16),
-                        _label("Texte", isDark),
+                        _label(l.t('text_label'), isDark),
                         const SizedBox(height: 10),
-                        TextField(controller: texteController, maxLines: 4, style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 14), decoration: _fieldDeco("Votre texte...", isDark)),
+                        TextField(controller: texteController, maxLines: 4, style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 14), decoration: _fieldDeco(l.t('text_hint_mobile'), isDark)),
                         const SizedBox(height: 16),
                         if (currentCipher.needsKey) ...[
-                          _label("Clé", isDark),
+                          _label(l.t('key_label'), isDark),
                           const SizedBox(height: 10),
-                          TextField(controller: cleController, style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 14), decoration: _fieldDeco("Clé...", isDark)),
+                          TextField(controller: cleController, style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 14), decoration: _fieldDeco(l.t('key_hint'), isDark)),
                           const SizedBox(height: 16),
                         ],
                         if (currentCipher.needsShift) ...[
-                          _label("Décalage", isDark),
+                          _label(l.t('shift_label'), isDark),
                           const SizedBox(height: 10),
-                          TextField(controller: decalageController, keyboardType: TextInputType.number, style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 14), decoration: _fieldDeco("Ex: 3", isDark)),
+                          TextField(controller: decalageController, keyboardType: TextInputType.number, style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 14), decoration: _fieldDeco(l.t('shift_hint_mobile'), isDark)),
                           const SizedBox(height: 16),
                         ],
                         Row(
                           children: [
-                            Expanded(child: _actionButton("Chiffrer", isDark, true, () => lancerChiffrement(true))),
+                            Expanded(child: _actionButton(l.t('encrypt_btn'), isDark, true, () => lancerChiffrement(true))),
                             const SizedBox(width: 10),
-                            Expanded(child: _actionButton("Déchiffrer", isDark, false, () => lancerChiffrement(false))),
+                            Expanded(child: _actionButton(l.t('decrypt_btn'), isDark, false, () => lancerChiffrement(false))),
                           ],
                         ),
                       ],
@@ -137,7 +140,7 @@ class _ChiffrementMobileState extends State<ChiffrementMobile> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _label("Résultat", isDark),
+                          _label(l.t('result_label'), isDark),
                           const SizedBox(height: 10),
                           Container(
                             width: double.infinity, padding: const EdgeInsets.all(12),

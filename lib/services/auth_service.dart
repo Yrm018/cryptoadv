@@ -20,6 +20,8 @@ class LocalUser {
   final String displayName;
   final String firstName;
   final String lastName;
+  /// Photo de profil stockée en base64 dans Hive (accessible à tous les utilisateurs)
+  final String? photoBase64;
 
   const LocalUser({
     required this.id,
@@ -28,15 +30,17 @@ class LocalUser {
     required this.displayName,
     required this.firstName,
     required this.lastName,
+    this.photoBase64,
   });
 
   factory LocalUser.fromMap(Map map) => LocalUser(
-    id: map['id'] as String,
-    email: map['email'] as String,
-    username: map['username'] as String? ?? map['email'] as String,
-    displayName: map['displayName'] as String,
-    firstName: map['firstName'] as String? ?? '',
-    lastName: map['lastName'] as String? ?? '',
+    id:           map['id']          as String,
+    email:        map['email']       as String,
+    username:     map['username']    as String? ?? map['email'] as String,
+    displayName:  map['displayName'] as String,
+    firstName:    map['firstName']   as String? ?? '',
+    lastName:     map['lastName']    as String? ?? '',
+    photoBase64:  map['photoBase64'] as String?,
   );
 }
 
@@ -260,6 +264,30 @@ class AuthService {
     updated['displayName'] = '${updated['firstName']} ${updated['lastName']}'.trim();
     await _db.users.put(userId, updated);
     return LocalUser.fromMap(updated);
+  }
+
+  // ── updatePhoto ───────────────────────────────────────────────────────────
+  /// Sauvegarde la photo de profil en base64 dans Hive.
+  /// Les autres utilisateurs peuvent la lire via [getUserPhotoBase64].
+  Future<LocalUser> updatePhoto({
+    required String userId,
+    required String? base64Image, // null = supprimer
+  }) async {
+    final userData = _db.users.get(userId);
+    if (userData == null) throw const AuthException(code: 'user-not-found', message: 'Utilisateur introuvable.');
+    final updated = Map<dynamic, dynamic>.from(userData);
+    if (base64Image == null) {
+      updated.remove('photoBase64');
+    } else {
+      updated['photoBase64'] = base64Image;
+    }
+    await _db.users.put(userId, updated);
+    return LocalUser.fromMap(updated);
+  }
+
+  /// Retourne la photo (base64) d'un utilisateur par son ID.
+  String? getUserPhotoBase64(String userId) {
+    return _db.users.get(userId)?['photoBase64'] as String?;
   }
 
   // ── signOut ───────────────────────────────────────────────────────────────

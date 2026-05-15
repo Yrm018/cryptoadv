@@ -1,9 +1,12 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../core/localization/app_l10n.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/locale_provider.dart';
 import '../../services/auth_service.dart';
+import '../../widgets/common/user_avatar.dart';
 
 void showAccountSettings(BuildContext context) {
   showDialog(
@@ -52,6 +55,11 @@ class _AccountSettingsDialogState extends State<AccountSettingsDialog> {
   bool _profileLoading  = false;
   String _profileError   = '';
   String _profileSuccess = '';
+
+  // ── Photo ─────────────────────────────────────────────────────────────────
+  bool _photoLoading  = false;
+  String _photoError   = '';
+  String _photoSuccess = '';
 
   // ── Langue ────────────────────────────────────────────────────────────────
   bool _langExpanded = false;
@@ -119,6 +127,45 @@ class _AccountSettingsDialogState extends State<AccountSettingsDialog> {
     }
   }
 
+  Future<void> _pickPhoto(AppL10n l) async {
+    setState(() { _photoLoading = true; _photoError = ''; _photoSuccess = ''; });
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) {
+        setState(() => _photoLoading = false);
+        return;
+      }
+      final bytes = result.files.single.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        setState(() { _photoLoading = false; _photoError = l.t('error_prefix'); });
+        return;
+      }
+      final base64Str = base64Encode(bytes);
+      await context.read<AuthProvider>().updatePhoto(base64Str);
+      if (mounted) setState(() => _photoSuccess = l.t('photo_updated'));
+    } catch (e) {
+      if (mounted) setState(() => _photoError = '${l.t('error_prefix')} : $e');
+    } finally {
+      if (mounted) setState(() => _photoLoading = false);
+    }
+  }
+
+  Future<void> _removePhoto(AppL10n l) async {
+    setState(() { _photoLoading = true; _photoError = ''; _photoSuccess = ''; });
+    try {
+      await context.read<AuthProvider>().updatePhoto(null);
+      if (mounted) setState(() => _photoSuccess = l.t('photo_removed'));
+    } catch (e) {
+      if (mounted) setState(() => _photoError = '${l.t('error_prefix')} : $e');
+    } finally {
+      if (mounted) setState(() => _photoLoading = false);
+    }
+  }
+
   Future<void> _saveProfile(AppL10n l) async {
     setState(() { _profileLoading = true; _profileError = ''; _profileSuccess = ''; });
     try {
@@ -165,15 +212,34 @@ class _AccountSettingsDialogState extends State<AccountSettingsDialog> {
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
               ),
               child: Row(children: [
-                CircleAvatar(
-                  radius: 26,
-                  backgroundColor: Colors.white.withOpacity(0.2),
-                  child: Text(
-                    (user?.username.isNotEmpty == true
-                        ? user!.username[0].toUpperCase() : '?'),
-                    style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                // ── Avatar cliquable ────────────────────────────────────────
+                Stack(children: [
+                  UserAvatar(
+                    photoBase64:     user?.photoBase64,
+                    initial:         user?.username ?? '?',
+                    radius:          28,
+                    backgroundColor: Colors.white.withOpacity(0.25),
                   ),
-                ),
+                  Positioned(
+                    bottom: 0, right: 0,
+                    child: GestureDetector(
+                      onTap: _photoLoading ? null : () => _pickPhoto(l),
+                      child: Container(
+                        width: 20, height: 20,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: const Color(0xFF0047AB), width: 1.5),
+                        ),
+                        child: _photoLoading
+                          ? const Padding(
+                              padding: EdgeInsets.all(2),
+                              child: CircularProgressIndicator(strokeWidth: 1.5, color: Color(0xFF0047AB)))
+                          : const Icon(Icons.camera_alt_rounded, size: 12, color: Color(0xFF0047AB)),
+                      ),
+                    ),
+                  ),
+                ]),
                 const SizedBox(width: 14),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(user?.displayName ?? '',
@@ -182,11 +248,29 @@ class _AccountSettingsDialogState extends State<AccountSettingsDialog> {
                       style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13)),
                   Text(user?.email ?? '',
                       style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12)),
+                  if (_photoSuccess.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(_photoSuccess,
+                      style: const TextStyle(color: Colors.greenAccent, fontSize: 11)),
+                  ],
+                  if (_photoError.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(_photoError,
+                      style: const TextStyle(color: Colors.redAccent, fontSize: 11)),
+                  ],
                 ])),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close, color: Colors.white70),
-                ),
+                Column(mainAxisSize: MainAxisSize.min, children: [
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: Colors.white70),
+                  ),
+                  if (user?.photoBase64 != null)
+                    IconButton(
+                      tooltip: l.t('remove_photo'),
+                      onPressed: _photoLoading ? null : () => _removePhoto(l),
+                      icon: const Icon(Icons.delete_outline, color: Colors.white54, size: 18),
+                    ),
+                ]),
               ]),
             ),
 

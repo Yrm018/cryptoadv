@@ -14,6 +14,7 @@ import '../../views/chat/chat_page.dart';
 import '../../views/history/history_page.dart';
 import '../../views/vpn/vpn_page.dart';
 import '../../views/settings/account_settings_dialog.dart';
+import '../common/user_avatar.dart';
 
 class AppDrawer extends StatelessWidget {
   final String currentPage;
@@ -87,11 +88,32 @@ class AppDrawer extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundColor: Colors.white.withOpacity(0.2),
-                    child: Text(initial,
-                        style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context);
+                      showAccountSettings(context);
+                    },
+                    child: Stack(children: [
+                      UserAvatar(
+                        photoBase64:     user?.photoBase64,
+                        initial:         initial,
+                        radius:          28,
+                        backgroundColor: Colors.white.withOpacity(0.25),
+                        fontSize:        20,
+                      ),
+                      Positioned(
+                        bottom: 0, right: 0,
+                        child: Container(
+                          width: 18, height: 18,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.blue.shade300, width: 1.5),
+                          ),
+                          child: Icon(Icons.edit, size: 10, color: Colors.blue.shade700),
+                        ),
+                      ),
+                    ]),
                   ),
                   const SizedBox(height: 10),
                   Text(user?.displayName ?? 'Utilisateur',

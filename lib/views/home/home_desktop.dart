@@ -1,6 +1,7 @@
 import 'package:cryptoadv/widgets/common/app_navbar.dart';
 import 'package:flutter/material.dart';
 import '../../components/backround.dart';
+import '../../core/localization/app_l10n.dart';
 import '../mot_de_passe/mdp_page.dart';
 import '../chiffrement/chiffrement_page.dart';
 import '../documentation/documentation_page.dart';
@@ -12,6 +13,7 @@ class HomeDesktop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final l = AppL10n.of(context);
 
     return Scaffold(
       body: Stack(
@@ -29,7 +31,7 @@ class HomeDesktop extends StatelessWidget {
                         children: [
                           const SizedBox(height: 60),
                           Text(
-                            "Gérez vos risques\nnumériques",
+                            l.t('hero_title_1'),
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 64,
@@ -44,10 +46,10 @@ class HomeDesktop extends StatelessWidget {
                                   ? [const Color(0xFF00D4FF), const Color(0xFFD1A7FF)]
                                   : [const Color(0xFF2563EB), const Color(0xFF7C3AED)],
                             ).createShader(bounds),
-                            child: const Text(
-                              "en toute sécurité",
+                            child: Text(
+                              l.t('hero_title_2'),
                               textAlign: TextAlign.center,
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 64,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.white,
@@ -58,9 +60,7 @@ class HomeDesktop extends StatelessWidget {
                           SizedBox(
                             width: 700,
                             child: Text(
-                              "YRM - Votre gestionnaire de risques gratuit et open source. "
-                                  "Chiffrez vos données, générez des mots de passe sécurisés "
-                                  "et protégez votre vie numérique.",
+                              l.t('hero_subtitle'),
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 20,
@@ -73,14 +73,14 @@ class HomeDesktop extends StatelessWidget {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               _actionButton(
-                                label: "Commencer maintenant →",
+                                label: "${l.t('start_now')} →",
                                 isPrimary: true,
                                 isDark: isDark,
                                 onTap: () {},
                               ),
                               const SizedBox(width: 20),
                               _actionButton(
-                                label: "En savoir plus",
+                                label: l.t('learn_more'),
                                 isPrimary: false,
                                 isDark: isDark,
                                 onTap: () {},
@@ -89,7 +89,7 @@ class HomeDesktop extends StatelessWidget {
                           ),
                           const SizedBox(height: 120),
                           Text(
-                            "Trois outils puissants pour votre sécurité",
+                            l.t('tools_title'),
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 40,
@@ -99,7 +99,7 @@ class HomeDesktop extends StatelessWidget {
                           ),
                           const SizedBox(height: 10),
                           Text(
-                            "Tout ce dont vous avez besoin pour protéger votre vie numérique",
+                            l.t('tools_subtitle'),
                             style: TextStyle(
                               fontSize: 18,
                               color: (isDark ? Colors.white : const Color(0xFF334155)).withOpacity(0.7),
@@ -111,10 +111,10 @@ class HomeDesktop extends StatelessWidget {
                             runSpacing: 40,
                             alignment: WrapAlignment.center,
                             children: [
-                              _featureCard(context, "Chiffrement", "Chiffrez et déchiffrez vos fichiers et messages sensibles.", Icons.description, const ChiffrementPage(), isDark),
-                              _featureCard(context, "Mot de passe", "Générez et testez la robustesse de vos mots de passe.", Icons.lock, const MdpPage(), isDark),
-                              _featureCard(context, "Messagerie VPN", "Messagerie sécurisée RSA+AES avec certificats X.509 et signature numérique.", Icons.vpn_lock_rounded, const VpnPage(), isDark),
-                              _featureCard(context, "Documentation", "Apprenez les bonnes pratiques de sécurité.", Icons.menu_book, const DocumentationPage(), isDark),
+                              _featureCard(context, l.t('chiffrement'), l.t('feat_chiffrement_desc'), Icons.description, const ChiffrementPage(), isDark, l),
+                              _featureCard(context, l.t('mdp'), l.t('feat_mdp_desc'), Icons.lock, const MdpPage(), isDark, l),
+                              _featureCard(context, l.t('feat_vpn_title'), l.t('feat_vpn_desc'), Icons.vpn_lock_rounded, const VpnPage(), isDark, l),
+                              _featureCard(context, l.t('documentation'), l.t('feat_doc_desc'), Icons.menu_book, const DocumentationPage(), isDark, l),
                             ],
                           ),
                           const SizedBox(height: 80),
@@ -157,7 +157,7 @@ class HomeDesktop extends StatelessWidget {
     );
   }
 
-  Widget _featureCard(BuildContext context, String title, String description, IconData icon, Widget? page, bool isDark) {
+  Widget _featureCard(BuildContext context, String title, String description, IconData icon, Widget? page, bool isDark, AppL10n l) {
     return GestureDetector(
       onTap: page == null ? null : () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => page)),
       child: Container(
@@ -179,7 +179,7 @@ class HomeDesktop extends StatelessWidget {
             Text(description, style: TextStyle(fontSize: 16, color: (isDark ? Colors.white : const Color(0xFF334155)).withOpacity(0.75))),
             if (page != null) ...[
               const SizedBox(height: 16),
-              Text('Accéder →', style: TextStyle(color: (isDark ? const Color(0xFF7AA6FF) : const Color(0xFF2563EB)).withOpacity(0.8), fontSize: 14, fontWeight: FontWeight.w600)),
+              Text('${l.t('access')} →', style: TextStyle(color: (isDark ? const Color(0xFF7AA6FF) : const Color(0xFF2563EB)).withOpacity(0.8), fontSize: 14, fontWeight: FontWeight.w600)),
             ],
           ],
         ),

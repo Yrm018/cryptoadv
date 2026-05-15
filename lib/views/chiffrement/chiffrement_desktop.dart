@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cryptoadv/backend/crypto/cesar.dart';
 import 'package:cryptoadv/backend/crypto/vigenere.dart';
 import 'package:cryptoadv/components/backround.dart';
+import '../../core/localization/app_l10n.dart';
 import '../../services/history_service.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/common/app_navbar.dart';
@@ -10,18 +11,18 @@ enum CipherType { cesar, vigenereNormal, vigenereAvance, vigenerePermute }
 
 class CipherOption {
   final CipherType type;
-  final String label;
+  final String labelKey;
   final bool needsKey;
   final bool needsShift;
-  final String description;
-  const CipherOption({required this.type, required this.label, required this.needsKey, required this.needsShift, required this.description});
+  final String descriptionKey;
+  const CipherOption({required this.type, required this.labelKey, required this.needsKey, required this.needsShift, required this.descriptionKey});
 }
 
 const List<CipherOption> cipherOptions = [
-  CipherOption(type: CipherType.cesar, label: "César", needsKey: false, needsShift: true, description: "Décalage simple des lettres."),
-  CipherOption(type: CipherType.vigenereNormal, label: "Vigenère", needsKey: true, needsShift: false, description: "Chiffre uniquement les lettres."),
-  CipherOption(type: CipherType.vigenereAvance, label: "Vigenère avancé", needsKey: true, needsShift: false, description: "Chiffre aussi les espaces et caractères spéciaux."),
-  CipherOption(type: CipherType.vigenerePermute, label: "Vigenère permuté", needsKey: true, needsShift: false, description: "Permutation puis Vigenère avancé."),
+  CipherOption(type: CipherType.cesar, labelKey: "cesar_label", needsKey: false, needsShift: true, descriptionKey: "cesar_desc"),
+  CipherOption(type: CipherType.vigenereNormal, labelKey: "vigenere_label", needsKey: true, needsShift: false, descriptionKey: "vigenere_desc"),
+  CipherOption(type: CipherType.vigenereAvance, labelKey: "vigenere_avance_label", needsKey: true, needsShift: false, descriptionKey: "vigenere_avance_desc"),
+  CipherOption(type: CipherType.vigenerePermute, labelKey: "vigenere_permute_label", needsKey: true, needsShift: false, descriptionKey: "vigenere_permute_desc"),
 ];
 
 class ChiffrementDesktop extends StatefulWidget {
@@ -76,6 +77,8 @@ class _ChiffrementDesktopState extends State<ChiffrementDesktop> {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final l = AppL10n.of(context);
+
     return Scaffold(
       body: Stack(
         children: [
@@ -94,48 +97,48 @@ class _ChiffrementDesktopState extends State<ChiffrementDesktop> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text("Chiffrement de texte", style: TextStyle(color: isDark ? Colors.white : const Color(0xFF0F172A), fontSize: 28, fontWeight: FontWeight.w700)),
+                              Text(l.t('cipher_title'), style: TextStyle(color: isDark ? Colors.white : const Color(0xFF0F172A), fontSize: 28, fontWeight: FontWeight.w700)),
                               const SizedBox(height: 8),
-                              Text("Choisis un algorithme, saisis ton texte puis chiffre ou déchiffre.", style: TextStyle(color: (isDark ? Colors.white : const Color(0xFF334155)).withOpacity(0.72), fontSize: 15)),
+                              Text(l.t('cipher_subtitle'), style: TextStyle(color: (isDark ? Colors.white : const Color(0xFF334155)).withOpacity(0.72), fontSize: 15)),
                               const SizedBox(height: 24),
-                              _label("Algorithme", isDark),
+                              _label(l.t('algo_label'), isDark),
                               const SizedBox(height: 12),
                               DropdownButtonFormField<CipherType>(
                                 value: selectedCipher,
                                 dropdownColor: isDark ? const Color(0xFF0F1B38) : Colors.white,
-                                decoration: _fieldDeco("Choisir un chiffrement", isDark),
+                                decoration: _fieldDeco(l.t('cipher_choice_hint'), isDark),
                                 style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-                                items: cipherOptions.map((o) => DropdownMenuItem(value: o.type, child: Text(o.label))).toList(),
+                                items: cipherOptions.map((o) => DropdownMenuItem(value: o.type, child: Text(l.t(o.labelKey)))).toList(),
                                 onChanged: (v) => setState(() { selectedCipher = v!; resultat = ""; }),
                               ),
                               const SizedBox(height: 16),
                               Container(
                                 width: double.infinity, padding: const EdgeInsets.all(14),
                                 decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), color: (isDark ? Colors.white : Colors.black).withOpacity(0.06), border: Border.all(color: (isDark ? Colors.white : Colors.black).withOpacity(0.06))),
-                                child: Text(currentCipher.description, style: TextStyle(color: (isDark ? Colors.white : const Color(0xFF334155)).withOpacity(0.78), fontSize: 14)),
+                                child: Text(l.t(currentCipher.descriptionKey), style: TextStyle(color: (isDark ? Colors.white : const Color(0xFF334155)).withOpacity(0.78), fontSize: 14)),
                               ),
                               const SizedBox(height: 24),
-                              _label("Texte", isDark),
+                              _label(l.t('text_label'), isDark),
                               const SizedBox(height: 12),
-                              TextField(controller: texteController, maxLines: 6, style: TextStyle(color: isDark ? Colors.white : Colors.black87), decoration: _fieldDeco("Entre ton texte ici...", isDark)),
+                              TextField(controller: texteController, maxLines: 6, style: TextStyle(color: isDark ? Colors.white : Colors.black87), decoration: _fieldDeco(l.t('text_hint'), isDark)),
                               const SizedBox(height: 20),
                               if (currentCipher.needsKey) ...[
-                                _label("Clé", isDark),
+                                _label(l.t('key_label'), isDark),
                                 const SizedBox(height: 12),
-                                TextField(controller: cleController, style: TextStyle(color: isDark ? Colors.white : Colors.black87), decoration: _fieldDeco("Entre la clé...", isDark)),
+                                TextField(controller: cleController, style: TextStyle(color: isDark ? Colors.white : Colors.black87), decoration: _fieldDeco(l.t('key_hint'), isDark)),
                                 const SizedBox(height: 20),
                               ],
                               if (currentCipher.needsShift) ...[
-                                _label("Décalage", isDark),
+                                _label(l.t('shift_label'), isDark),
                                 const SizedBox(height: 12),
-                                TextField(controller: decalageController, keyboardType: TextInputType.number, style: TextStyle(color: isDark ? Colors.white : Colors.black87), decoration: _fieldDeco("Entre le décalage...", isDark)),
+                                TextField(controller: decalageController, keyboardType: TextInputType.number, style: TextStyle(color: isDark ? Colors.white : Colors.black87), decoration: _fieldDeco(l.t('shift_hint'), isDark)),
                                 const SizedBox(height: 20),
                               ],
                               Row(
                                 children: [
-                                  Expanded(child: _actionButton("Chiffrer", isDark, true, () => lancerChiffrement(true))),
+                                  Expanded(child: _actionButton(l.t('encrypt_btn'), isDark, true, () => lancerChiffrement(true))),
                                   const SizedBox(width: 14),
-                                  Expanded(child: _actionButton("Déchiffrer", isDark, false, () => lancerChiffrement(false))),
+                                  Expanded(child: _actionButton(l.t('decrypt_btn'), isDark, false, () => lancerChiffrement(false))),
                                 ],
                               ),
                             ],
@@ -147,12 +150,12 @@ class _ChiffrementDesktopState extends State<ChiffrementDesktop> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text("Résultat", style: TextStyle(color: isDark ? Colors.white : const Color(0xFF1E293B), fontSize: 22, fontWeight: FontWeight.w700)),
+                              Text(l.t('result_label'), style: TextStyle(color: isDark ? Colors.white : const Color(0xFF1E293B), fontSize: 22, fontWeight: FontWeight.w700)),
                               const SizedBox(height: 18),
                               Container(
                                 width: double.infinity, constraints: const BoxConstraints(minHeight: 140), padding: const EdgeInsets.all(18),
                                 decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), color: (isDark ? Colors.white : Colors.black).withOpacity(0.06), border: Border.all(color: (isDark ? Colors.white : Colors.black).withOpacity(0.08))),
-                                child: SelectableText(resultat.isEmpty ? "Le résultat s'affichera ici..." : resultat, style: TextStyle(color: resultat.isEmpty ? (isDark ? Colors.white : Colors.black).withOpacity(0.45) : (isDark ? Colors.white : Colors.black87), fontSize: 16, height: 1.5)),
+                                child: SelectableText(resultat.isEmpty ? l.t('result_hint') : resultat, style: TextStyle(color: resultat.isEmpty ? (isDark ? Colors.white : Colors.black).withOpacity(0.45) : (isDark ? Colors.white : Colors.black87), fontSize: 16, height: 1.5)),
                               ),
                             ],
                           ),

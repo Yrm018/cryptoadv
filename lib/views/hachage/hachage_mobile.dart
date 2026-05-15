@@ -6,6 +6,7 @@ import '../../components/backround.dart';
 import '../../widgets/common/app_drawer.dart';
 import 'package:cryptoadv/backend/crypto/hachage.dart';
 import 'package:file_picker/file_picker.dart';
+import '../../core/localization/app_l10n.dart';
 
 class HachageMobile extends StatefulWidget {
   const HachageMobile({super.key});
@@ -20,7 +21,7 @@ class _HachageMobileState extends State<HachageMobile> {
 
   String selectedAlgo = "sha256";
   String fileHashResult = "";
-  String fileName = "Aucun fichier sélectionné";
+  String fileName = "";
   final HistoryService _historyService = HistoryService();
 
   Future<void> _saveHistory({
@@ -42,7 +43,7 @@ class _HachageMobileState extends State<HachageMobile> {
     );
   }
 
-  Future<void> _pickAndHashFile() async {
+  Future<void> _pickAndHashFile(AppL10n l) async {
     final result = await FilePicker.platform.pickFiles(
       withData: true,
     );
@@ -56,7 +57,7 @@ class _HachageMobileState extends State<HachageMobile> {
 
     if (bytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Impossible de lire le fichier.")),
+        SnackBar(content: Text(l.t('err_read_file'))),
       );
       return;
     }
@@ -84,11 +85,13 @@ class _HachageMobileState extends State<HachageMobile> {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final l = AppL10n.of(context);
+    if (fileName.isEmpty) fileName = l.t('no_file_selected');
 
     return Scaffold(
       drawer: const AppDrawer(currentPage: 'hachage'),
       appBar: AppBar(
-        title: const Text('Hachage'),
+        title: Text(l.t('hachage')),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black),
@@ -104,7 +107,7 @@ class _HachageMobileState extends State<HachageMobile> {
                 children: [
                   _hashCard(
                     isDark: isDark,
-                    title: "Message",
+                    title: l.t('message_label'),
                     icon: Icons.text_fields,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -113,25 +116,25 @@ class _HachageMobileState extends State<HachageMobile> {
                           controller: messageController,
                           maxLines: 3,
                           style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 14),
-                          decoration: _inputDeco("Entrez votre message...", isDark),
+                          decoration: _inputDeco(l.t('message_hint'), isDark),
                         ),
                         const SizedBox(height: 16),
                         _algoDropdown(isDark),
                         const SizedBox(height: 16),
-                        _actionButton("Hacher", isDark, () async {
+                        _actionButton(l.t('hash_btn_mobile'), isDark, () async {
                           final result = hashMessage(messageController.text, algorithm: selectedAlgo);
                           setState(() => resultController.text = result);
                           await _saveHistory(inputPreview: messageController.text, result: result);
                         }),
                         const SizedBox(height: 16),
-                        _resultField(resultController, isDark),
+                        _resultField(resultController, isDark, l),
                       ],
                     ),
                   ),
                   const SizedBox(height: 20),
                   _hashCard(
                     isDark: isDark,
-                    title: "Fichier",
+                    title: l.t('hash_file_title'),
                     icon: Icons.insert_drive_file_outlined,
                     color: (isDark ? const Color(0xFF0047AB) : const Color(0xFFEFF6FF)).withOpacity(0.35),
                     child: Column(
@@ -148,9 +151,9 @@ class _HachageMobileState extends State<HachageMobile> {
                           child: Text(fileName, style: TextStyle(color: isDark ? Colors.white70 : Colors.black87, fontSize: 14)),
                         ),
                         const SizedBox(height: 16),
-                        _actionButton("Choisir un fichier", isDark, _pickAndHashFile),
+                        _actionButton(l.t('choose_file_btn'), isDark, () => _pickAndHashFile(l)),
                         const SizedBox(height: 16),
-                        _resultDisplay(fileHashResult, isDark),
+                        _resultDisplay(fileHashResult, isDark, l),
                       ],
                     ),
                   ),
@@ -242,26 +245,26 @@ class _HachageMobileState extends State<HachageMobile> {
     );
   }
 
-  Widget _resultField(TextEditingController ctrl, bool isDark) {
+  Widget _resultField(TextEditingController ctrl, bool isDark, AppL10n l) {
     return TextField(
       controller: ctrl,
       readOnly: true,
       maxLines: 2,
       style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 12),
-      decoration: _inputDeco("Le hash apparaîtra ici...", isDark).copyWith(
+      decoration: _inputDeco(l.t('result_hint'), isDark).copyWith(
         suffixIcon: IconButton(
           icon: Icon(Icons.copy, color: isDark ? const Color(0xFF00D4FF) : const Color(0xFF2563EB), size: 20),
           onPressed: () {
             if (ctrl.text.isEmpty) return;
             Clipboard.setData(ClipboardData(text: ctrl.text));
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Hash copié !"), duration: Duration(seconds: 2)));
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l.t('hash_copied')), duration: const Duration(seconds: 2)));
           },
         ),
       ),
     );
   }
 
-  Widget _resultDisplay(String result, bool isDark) {
+  Widget _resultDisplay(String result, bool isDark, AppL10n l) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -271,7 +274,7 @@ class _HachageMobileState extends State<HachageMobile> {
         border: Border.all(color: (isDark ? Colors.white12 : Colors.black12)),
       ),
       child: SelectableText(
-        result.isEmpty ? "Le hash du fichier apparaîtra ici..." : result,
+        result.isEmpty ? l.t('file_hash_hint') : result,
         style: TextStyle(
           color: result.isEmpty ? (isDark ? Colors.white54 : Colors.black45) : (isDark ? Colors.white : Colors.black87),
           fontSize: 12,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../components/backround.dart';
+import '../../core/localization/app_l10n.dart';
 import '../../widgets/common/app_drawer.dart';
 import '../mot_de_passe/mdp_page.dart';
 import '../chiffrement/chiffrement_page.dart';
@@ -12,6 +13,7 @@ class HomeMobile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final l = AppL10n.of(context);
 
     return Scaffold(
       drawer: const AppDrawer(currentPage: 'home'),
@@ -32,7 +34,7 @@ class HomeMobile extends StatelessWidget {
                 children: [
                   const SizedBox(height: 40),
                   Text(
-                    "Gérez vos risques numériques",
+                    l.t('hero_title_1').replaceAll('\n', ' '),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 32,
@@ -47,10 +49,10 @@ class HomeMobile extends StatelessWidget {
                           ? [const Color(0xFF00D4FF), const Color(0xFFD1A7FF)]
                           : [const Color(0xFF2563EB), const Color(0xFF7C3AED)],
                     ).createShader(bounds),
-                    child: const Text(
-                      "en toute sécurité",
+                    child: Text(
+                      l.t('hero_title_2'),
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
@@ -59,7 +61,7 @@ class HomeMobile extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    "YRM - Votre gestionnaire de risques gratuit et open source.",
+                    l.t('hero_subtitle_mobile'),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 16,
@@ -68,14 +70,14 @@ class HomeMobile extends StatelessWidget {
                   ),
                   const SizedBox(height: 30),
                   _actionButton(
-                    label: "Commencer maintenant",
+                    label: l.t('start_now'),
                     isPrimary: true,
                     isDark: isDark,
                     onTap: () {},
                   ),
                   const SizedBox(height: 60),
                   Text(
-                    "Nos outils",
+                    l.t('our_tools'),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 28,
@@ -84,13 +86,13 @@ class HomeMobile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 30),
-                  _featureCard(context, "Chiffrement", "Chiffrez vos fichiers.", Icons.description, const ChiffrementPage(), isDark),
+                  _featureCard(context, l.t('chiffrement'), l.t('feat_chiffrement_desc_mobile'), Icons.description, const ChiffrementPage(), isDark),
                   const SizedBox(height: 20),
-                  _featureCard(context, "Mot de passe", "Générez des MDP.", Icons.lock, const MdpPage(), isDark),
+                  _featureCard(context, l.t('mdp'), l.t('feat_mdp_desc_mobile'), Icons.lock, const MdpPage(), isDark),
                   const SizedBox(height: 20),
-                  _featureCard(context, "Messagerie VPN", "Messagerie sécurisée.", Icons.vpn_lock_rounded, const VpnPage(), isDark),
+                  _featureCard(context, l.t('feat_vpn_title'), l.t('feat_vpn_desc_mobile'), Icons.vpn_lock_rounded, const VpnPage(), isDark),
                   const SizedBox(height: 20),
-                  _featureCard(context, "Documentation", "Apprenez la sécu.", Icons.menu_book, const DocumentationPage(), isDark),
+                  _featureCard(context, l.t('documentation'), l.t('feat_doc_desc_mobile'), Icons.menu_book, const DocumentationPage(), isDark),
                   const SizedBox(height: 40),
                 ],
               ),

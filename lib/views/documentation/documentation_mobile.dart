@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../components/backround.dart';
+import '../../core/localization/app_l10n.dart';
 import '../../widgets/common/app_drawer.dart';
 
 class DocumentationMobile extends StatelessWidget {
@@ -8,11 +9,12 @@ class DocumentationMobile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final l = AppL10n.of(context);
 
     return Scaffold(
       drawer: const AppDrawer(currentPage: 'documentation'),
       appBar: AppBar(
-        title: const Text('Documentation'),
+        title: Text(l.t('documentation')),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black),
@@ -31,9 +33,9 @@ class DocumentationMobile extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text("Documentation", style: TextStyle(color: isDark ? Colors.white : const Color(0xFF0F172A), fontSize: 24, fontWeight: FontWeight.bold)),
+                        Text(l.t('doc_title'), style: TextStyle(color: isDark ? Colors.white : const Color(0xFF0F172A), fontSize: 24, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 12),
-                        Text("Cette application permet de manipuler plusieurs outils liés à la cybersécurité.",
+                        Text(l.t('doc_intro_mobile'),
                             style: TextStyle(color: (isDark ? Colors.white : const Color(0xFF334155)).withOpacity(0.78), fontSize: 14)),
                       ],
                     ),
@@ -44,12 +46,12 @@ class DocumentationMobile extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _sectionTitle("1. Hachage", isDark),
+                        _sectionTitle(l.t('doc_hachage_title'), isDark),
                         const SizedBox(height: 10),
-                        _sectionText("Le hachage transforme une donnée en une empreinte unique de longueur fixe.", isDark),
+                        _sectionText(l.t('doc_hachage_desc'), isDark),
                         const SizedBox(height: 12),
-                        _bullet("MD5, SHA-1, SHA-256", isDark),
-                        _bullet("Vérification d'intégrité", isDark),
+                        _bullet(l.t('doc_hachage_algos_mobile'), isDark),
+                        _bullet(l.t('doc_hachage_integrity_mobile'), isDark),
                       ],
                     ),
                   ),
@@ -59,12 +61,12 @@ class DocumentationMobile extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _sectionTitle("2. Chiffrement", isDark),
+                        _sectionTitle(l.t('doc_cipher_title'), isDark),
                         const SizedBox(height: 10),
-                        _sectionText("Le chiffrement protège le contenu d'un message en le rendant illisible.", isDark),
+                        _sectionText(l.t('doc_cipher_desc'), isDark),
                         const SizedBox(height: 12),
-                        _bullet("César (décalage)", isDark),
-                        _bullet("Vigenère (clé)", isDark),
+                        _bullet(l.t('doc_cesar_mobile'), isDark),
+                        _bullet(l.t('doc_vigenere_mobile'), isDark),
                       ],
                     ),
                   ),

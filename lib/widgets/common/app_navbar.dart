@@ -15,6 +15,7 @@ import '../../views/chat/chat_page.dart';
 import '../../views/history/history_page.dart';
 import '../../views/vpn/vpn_page.dart';
 import '../../views/settings/account_settings_dialog.dart';
+import '../common/user_avatar.dart';
 
 class AppNavbar extends StatelessWidget {
   final String currentPage;
@@ -94,7 +95,7 @@ class AppNavbar extends StatelessWidget {
   // ── Popup Settings ────────────────────────────────────────────────────────
 
   Widget _settingsButton(BuildContext context, ThemeProvider themeProvider,
-      LocaleProvider localeProvider, bool isDark, String? username, AppL10n l) {
+      LocaleProvider localeProvider, bool isDark, String? username, String? photoBase64, AppL10n l) {
     final initial = (username?.isNotEmpty == true) ? username![0].toUpperCase() : '?';
 
     return PopupMenuButton<String>(
@@ -130,11 +131,11 @@ class AppNavbar extends StatelessWidget {
           enabled: false,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(children: [
-            CircleAvatar(
-              radius: 18,
+            UserAvatar(
+              photoBase64:     photoBase64,
+              initial:         initial,
+              radius:          18,
               backgroundColor: const Color(0xFF0047AB).withOpacity(0.7),
-              child: Text(initial,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
             ),
             const SizedBox(width: 10),
             Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
@@ -221,11 +222,12 @@ class AppNavbar extends StatelessWidget {
               : const Color(0xFF3B82F6).withOpacity(0.1),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          CircleAvatar(
-            radius: 12,
+          UserAvatar(
+            photoBase64:     photoBase64,
+            initial:         initial,
+            radius:          12,
             backgroundColor: const Color(0xFF0047AB),
-            child: Text(initial,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11)),
+            fontSize:        11,
           ),
           const SizedBox(width: 7),
           Text('@${username ?? '...'}',
@@ -271,6 +273,7 @@ class AppNavbar extends StatelessWidget {
     final authProvider   = context.watch<AuthProvider>();
     final bool isDark    = themeProvider.isDarkMode;
     final username       = authProvider.currentUser?.username;
+    final photoBase64    = authProvider.currentUser?.photoBase64;
     final l              = AppL10n.of(context);
 
     return Padding(
@@ -300,7 +303,7 @@ class AppNavbar extends StatelessWidget {
             Container(width: 1, height: 20,
                 color: isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.1)),
             const SizedBox(width: 8),
-            _settingsButton(context, themeProvider, localeProvider, isDark, username, l),
+            _settingsButton(context, themeProvider, localeProvider, isDark, username, photoBase64, l),
           ]),
         ],
       ),

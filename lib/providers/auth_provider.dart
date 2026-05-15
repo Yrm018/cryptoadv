@@ -108,6 +108,15 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Mise à jour de la photo de profil ────────────────────────────────────
+
+  Future<void> updatePhoto(String? base64Image) async {
+    final userId = _currentUser?.id;
+    if (userId == null) return;
+    _currentUser = await _authService.updatePhoto(userId: userId, base64Image: base64Image);
+    notifyListeners();
+  }
+
   // ── Déconnexion ───────────────────────────────────────────────────────────
 
   Future<void> signOut() async {
