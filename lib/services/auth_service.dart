@@ -20,7 +20,6 @@ class LocalUser {
   final String displayName;
   final String firstName;
   final String lastName;
-  /// Photo de profil stockée en base64 dans Hive (accessible à tous les utilisateurs)
   final String? photoBase64;
 
   const LocalUser({
@@ -33,15 +32,29 @@ class LocalUser {
     this.photoBase64,
   });
 
-  factory LocalUser.fromMap(Map map) => LocalUser(
-    id:           map['id']          as String,
-    email:        map['email']       as String,
-    username:     map['username']    as String? ?? map['email'] as String,
-    displayName:  map['displayName'] as String,
-    firstName:    map['firstName']   as String? ?? '',
-    lastName:     map['lastName']    as String? ?? '',
-    photoBase64:  map['photoBase64'] as String?,
-  );
+  factory LocalUser.fromMap(Map map) {
+    final id = (map['id'] ?? map['user_id'] ?? '').toString();
+    final email = (map['email'] ?? '').toString();
+    final username = (map['username'] ?? map['user_name'] ?? email).toString();
+    final fName = (map['firstName'] ?? map['first_name'] ?? '').toString();
+    final lName = (map['lastName'] ?? map['last_name'] ?? '').toString();
+    
+    String dName = (map['displayName'] ?? map['display_name'] ?? '').toString();
+    if (dName.isEmpty) {
+      dName = "$fName $lName".trim();
+    }
+    if (dName.isEmpty) dName = username;
+
+    return LocalUser(
+      id: id,
+      email: email,
+      username: username,
+      displayName: dName,
+      firstName: fName,
+      lastName: lName,
+      photoBase64: (map['photoBase64'] ?? map['photo_base64'])?.toString(),
+    );
+  }
 }
 
 const _kCurrentUserId = 'current_user_id';
@@ -106,7 +119,6 @@ class AuthService {
       );
     }
 
-    // Vérifier que le username ne contient que des caractères valides
     final usernameRegex = RegExp(r'^[a-zA-Z0-9_\.]+$');
     if (!usernameRegex.hasMatch(normalizedUsername)) {
       throw const AuthException(
@@ -115,7 +127,6 @@ class AuthService {
       );
     }
 
-    // Unicité email
     final emailExists = _db.users.values.any(
       (u) => u['email'] == normalizedEmail,
     );
@@ -126,7 +137,6 @@ class AuthService {
       );
     }
 
-    // Unicité username
     final usernameExists = _db.users.values.any(
       (u) => (u['username'] as String?)?.toLowerCase() == normalizedUsername,
     );
@@ -164,14 +174,13 @@ class AuthService {
     );
   }
 
-  // ── signIn — accepte email OU username ────────────────────────────────────
+  // ── signIn ────────────────────────────────────────────────────────────────
   Future<LocalUser> signIn({
-    required String identifier, // email ou username
+    required String identifier,
     required String password,
   }) async {
     final normalized = identifier.trim().toLowerCase();
 
-    // Chercher par email d'abord, puis par username
     Map userData = _db.users.values.firstWhere(
       (u) => u['email'] == normalized,
       orElse: () => {},
@@ -267,11 +276,9 @@ class AuthService {
   }
 
   // ── updatePhoto ───────────────────────────────────────────────────────────
-  /// Sauvegarde la photo de profil en base64 dans Hive.
-  /// Les autres utilisateurs peuvent la lire via [getUserPhotoBase64].
   Future<LocalUser> updatePhoto({
     required String userId,
-    required String? base64Image, // null = supprimer
+    required String? base64Image,
   }) async {
     final userData = _db.users.get(userId);
     if (userData == null) throw const AuthException(code: 'user-not-found', message: 'Utilisateur introuvable.');
@@ -285,12 +292,10 @@ class AuthService {
     return LocalUser.fromMap(updated);
   }
 
-  /// Retourne la photo (base64) d'un utilisateur par son ID.
   String? getUserPhotoBase64(String userId) {
     return _db.users.get(userId)?['photoBase64'] as String?;
   }
 
-  // ── signOut ───────────────────────────────────────────────────────────────
   Future<void> signOut() async => _clearSession();
 
   Future<void> _saveSession(String userId) async {
