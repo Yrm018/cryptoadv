@@ -14,6 +14,7 @@ import '../../views/chat/chat_page.dart';
 import '../../views/history/history_page.dart';
 import '../../views/vpn/vpn_page.dart';
 import '../../views/settings/account_settings_dialog.dart';
+import '../../main.dart'; // Pour AppRoot
 import '../common/user_avatar.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -62,6 +63,7 @@ class AppDrawer extends StatelessWidget {
     final l      = AppL10n.of(context);
     final isDark = themeProvider.isDarkMode;
     final user   = authProvider.currentUser;
+    final isAuth = authProvider.isAuthenticated;
     final initial = (user?.username.isNotEmpty == true)
         ? user!.username[0].toUpperCase()
         : '?';
@@ -70,83 +72,160 @@ class AppDrawer extends StatelessWidget {
       backgroundColor: isDark ? const Color(0xFF0F172A) : Colors.white,
       child: Column(
         children: [
-          // ── En-tête utilisateur ───────────────────────────────────────────
-          DrawerHeader(
-            padding: EdgeInsets.zero,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: isDark
-                    ? [const Color(0xFF0047AB), const Color(0xFF0F172A)]
-                    : [const Color(0xFF3B82F6), const Color(0xFF2563EB)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+          if (isAuth) ...[
+            DrawerHeader(
+              padding: EdgeInsets.zero,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: isDark
+                      ? [const Color(0xFF0047AB), const Color(0xFF0F172A)]
+                      : [const Color(0xFF3B82F6), const Color(0xFF2563EB)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
               ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.pop(context);
-                      showAccountSettings(context);
-                    },
-                    child: Stack(children: [
-                      UserAvatar(
-                        photoBase64:     user?.photoBase64,
-                        initial:         initial,
-                        radius:          28,
-                        backgroundColor: Colors.white.withOpacity(0.25),
-                        fontSize:        20,
-                      ),
-                      Positioned(
-                        bottom: 0, right: 0,
-                        child: Container(
-                          width: 18, height: 18,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.blue.shade300, width: 1.5),
-                          ),
-                          child: Icon(Icons.edit, size: 10, color: Colors.blue.shade700),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(context);
+                        showAccountSettings(context);
+                      },
+                      child: Stack(children: [
+                        UserAvatar(
+                          photoBase64:     user?.photoBase64,
+                          initial:         initial,
+                          radius:          28,
+                          backgroundColor: Colors.white.withOpacity(0.25),
+                          fontSize:        20,
                         ),
-                      ),
-                    ]),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(user?.displayName ?? 'Utilisateur',
-                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 2),
-                  Text('@${user?.username ?? ''}',
-                      style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13)),
-                  Text(user?.email ?? '',
-                      style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 11)),
-                ],
+                        Positioned(
+                          bottom: 0, right: 0,
+                          child: Container(
+                            width: 18, height: 18,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.blue.shade300, width: 1.5),
+                            ),
+                            child: Icon(Icons.edit, size: 10, color: Colors.blue.shade700),
+                          ),
+                        ),
+                      ]),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(user?.displayName ?? 'Utilisateur',
+                        style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 2),
+                    Text('@${user?.username ?? ''}',
+                        style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13)),
+                    Text(user?.email ?? '',
+                        style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 11)),
+                  ],
+                ),
               ),
             ),
-          ),
+          ] else ...[
+            DrawerHeader(
+              padding: EdgeInsets.zero,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: isDark
+                      ? [const Color(0xFF0047AB), const Color(0xFF0F172A)]
+                      : [const Color(0xFF3B82F6), const Color(0xFF2563EB)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    const Icon(Icons.lock_rounded, color: Colors.white, size: 36),
+                    const SizedBox(height: 10),
+                    const Text('CryptYRM',
+                        style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 2),
+                    Text('Cryptographie & Sécurité',
+                        style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12)),
+                  ],
+                ),
+              ),
+            ),
+          ],
 
-          // ── Navigation ───────────────────────────────────────────────────
           Expanded(
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                _item(context: context, title: l.t('home'),          icon: Icons.home_rounded,                page: const HomePage(),          active: _isActive('home')),
-                _item(context: context, title: l.t('hachage'),       icon: Icons.fingerprint_rounded,         page: const HachagePage(),       active: _isActive('hachage')),
-                _item(context: context, title: l.t('chiffrement'),   icon: Icons.enhanced_encryption_rounded, page: const ChiffrementPage(),   active: _isActive('chiffrement')),
-                _item(context: context, title: l.t('mdp'),           icon: Icons.password_rounded,            page: const MdpPage(),           active: _isActive('mdp')),
-                _item(context: context, title: l.t('chat'),          icon: Icons.chat_bubble_outline_rounded, page: const ChatPage(),          active: _isActive('chat')),
-                _item(context: context, title: l.t('vpn'),           icon: Icons.vpn_lock_rounded,            page: const VpnPage(),           active: _isActive('vpn')),
-                const Divider(),
-                _item(context: context, title: l.t('history'),       icon: Icons.history_rounded,             page: const HistoryPage(),       active: _isActive('history')),
-                _item(context: context, title: l.t('documentation'), icon: Icons.menu_book_rounded,           page: const DocumentationPage(), active: _isActive('documentation')),
+                if (isAuth) ...[
+                  _item(context: context, title: l.t('chat'),          icon: Icons.chat_bubble_outline_rounded, page: const ChatPage(),          active: _isActive('chat')),
+                  _item(context: context, title: l.t('hachage'),       icon: Icons.fingerprint_rounded,         page: const HachagePage(),       active: _isActive('hachage')),
+                  _item(context: context, title: l.t('chiffrement'),   icon: Icons.enhanced_encryption_rounded, page: const ChiffrementPage(),   active: _isActive('chiffrement')),
+                  _item(context: context, title: l.t('mdp'),           icon: Icons.password_rounded,            page: const MdpPage(),           active: _isActive('mdp')),
+                  _item(context: context, title: l.t('vpn'),           icon: Icons.vpn_lock_rounded,            page: const VpnPage(),           active: _isActive('vpn')),
+                  const Divider(),
+                  _item(context: context, title: l.t('history'),       icon: Icons.history_rounded,             page: const HistoryPage(),       active: _isActive('history')),
+                ] else ...[
+                  _item(context: context, title: l.t('home'), icon: Icons.home_rounded,
+                      page: const HomePage(), active: _isActive('home')),
+                ],
+                _item(context: context, title: l.t('documentation'), icon: Icons.menu_book_rounded,
+                    page: const DocumentationPage(), active: _isActive('documentation')),
+
+                if (!isAuth) ...[
+                  const Divider(),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const AuthPage()));
+                      },
+                      icon: const Icon(Icons.login_rounded, size: 16),
+                      label: Text(l.t('login_btn')),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isDark ? const Color(0xFF0047AB) : const Color(0xFF3B82F6),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const AuthPage(initialSignup: true)));
+                      },
+                      icon: const Icon(Icons.person_add_rounded, size: 16),
+                      label: Text(l.t('signup_btn')),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: isDark ? const Color(0xFF7AA6FF) : const Color(0xFF2563EB),
+                        side: BorderSide(
+                            color: isDark ? const Color(0xFF7AA6FF) : const Color(0xFF2563EB)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
               ],
             ),
           ),
 
-          // ── Sélecteur de langue ──────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -167,28 +246,29 @@ class AppDrawer extends StatelessWidget {
 
           const Divider(height: 1),
 
-          // ── Paramètres ───────────────────────────────────────────────────
-          _item(context: context, title: l.t('account_settings'),
-              icon: Icons.manage_accounts_outlined,
-              onTap: () => showAccountSettings(context)),
-
           _item(context: context,
               title: isDark ? l.t('light_mode') : l.t('dark_mode'),
               icon: isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
               onTap: () => themeProvider.toggleTheme(!isDark)),
 
-          _item(context: context, title: l.t('logout'),
-              icon: Icons.logout_rounded, color: Colors.red,
-              onTap: () async {
-                await authProvider.signOut();
-                if (context.mounted) {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (_) => const AuthPage()),
-                    (route) => false,
-                  );
-                }
-              }),
+          if (isAuth) ...[
+            _item(context: context, title: l.t('account_settings'),
+                icon: Icons.manage_accounts_outlined,
+                onTap: () => showAccountSettings(context)),
+
+            _item(context: context, title: l.t('logout'),
+                icon: Icons.logout_rounded, color: Colors.red,
+                onTap: () async {
+                  await authProvider.signOut();
+                  if (context.mounted) {
+                    Navigator.pushAndRemoveUntil(
+                      context, 
+                      MaterialPageRoute(builder: (_) => const AppRoot()),
+                      (route) => false,
+                    );
+                  }
+                }),
+          ],
 
           const SizedBox(height: 16),
         ],

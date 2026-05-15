@@ -6,7 +6,8 @@ import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
 
 class AuthDesktop extends StatefulWidget {
-  const AuthDesktop({super.key});
+  final bool initialSignup;
+  const AuthDesktop({super.key, this.initialSignup = false});
 
   @override
   State<AuthDesktop> createState() => _AuthDesktopState();
@@ -21,7 +22,7 @@ class _AuthDesktopState extends State<AuthDesktop> {
   final TextEditingController passwordController        = TextEditingController();
   final TextEditingController confirmPasswordController = TextEditingController();
 
-  bool isLogin = true;
+  late bool isLogin;
   bool isLoading = false;
   bool showPassword = false;
   bool showConfirmPassword = false;
@@ -36,6 +37,7 @@ class _AuthDesktopState extends State<AuthDesktop> {
   @override
   void initState() {
     super.initState();
+    isLogin = !widget.initialSignup;
     passwordController.addListener(() => setState(() {}));
   }
 
@@ -83,6 +85,8 @@ class _AuthDesktopState extends State<AuthDesktop> {
           firstName: firstName, lastName: lastName,
         );
       }
+      // Retour à la HomePage (landing → dashboard)
+      if (mounted) Navigator.pop(context);
     } on AuthException catch (e) {
       setState(() => errorMessage = e.message);
     } catch (e) {
@@ -143,6 +147,20 @@ class _AuthDesktopState extends State<AuthDesktop> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // ── Bouton retour ──────────────────────────────
+                          Align(
+                            alignment: Alignment.topLeft,
+                            child: TextButton.icon(
+                              onPressed: () => Navigator.pop(context),
+                              icon: const Icon(Icons.arrow_back_rounded, size: 16, color: Colors.white54),
+                              label: const Text('Retour',
+                                  style: TextStyle(color: Colors.white54, fontSize: 13)),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
                           Text(
                             isLogin ? 'Connexion' : 'Créer un compte',
                             style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),

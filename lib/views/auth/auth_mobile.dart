@@ -6,7 +6,8 @@ import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
 
 class AuthMobile extends StatefulWidget {
-  const AuthMobile({super.key});
+  final bool initialSignup;
+  const AuthMobile({super.key, this.initialSignup = false});
 
   @override
   State<AuthMobile> createState() => _AuthMobileState();
@@ -24,7 +25,7 @@ class _AuthMobileState extends State<AuthMobile> {
   final TextEditingController passwordController        = TextEditingController();
   final TextEditingController confirmPasswordController = TextEditingController();
 
-  bool isLogin = true;
+  late bool isLogin;
   bool isLoading = false;
   bool showPassword = false;
   bool showConfirmPassword = false;
@@ -39,6 +40,7 @@ class _AuthMobileState extends State<AuthMobile> {
   @override
   void initState() {
     super.initState();
+    isLogin = !widget.initialSignup;
     passwordController.addListener(() => setState(() {}));
   }
 
@@ -87,6 +89,8 @@ class _AuthMobileState extends State<AuthMobile> {
           firstName: firstName, lastName: lastName,
         );
       }
+      // Retour à la HomePage (landing → dashboard)
+      if (mounted) Navigator.pop(context);
     } on AuthException catch (e) {
       setState(() => errorMessage = e.message);
     } catch (e) {
@@ -103,12 +107,28 @@ class _AuthMobileState extends State<AuthMobile> {
         children: [
           const CryptoBackground(),
           SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  children: [
-                    AnimatedLogo(size: LogoSize.md),
+            child: Column(
+              children: [
+                // ── Bouton retour ───────────────────────────────────────────
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.arrow_back_rounded, size: 16, color: Colors.white54),
+                    label: const Text('Retour',
+                        style: TextStyle(color: Colors.white54, fontSize: 13)),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        children: [
+                          AnimatedLogo(size: LogoSize.md),
                     const SizedBox(height: 24),
                     _glassCard(
                       child: Column(
@@ -183,9 +203,12 @@ class _AuthMobileState extends State<AuthMobile> {
                         ],
                       ),
                     ),
-                  ],
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         ],

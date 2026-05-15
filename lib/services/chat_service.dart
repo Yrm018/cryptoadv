@@ -8,15 +8,16 @@ import '../models/chat_message_model.dart';
 import '../services/auth_service.dart';
 import '../backend/crypto/cryptavance.dart';
 import '../backend/security/rsa_service.dart';
+import '../services/socket_service.dart';
 
-/// ChatService — chat local avec hive.
-///
-/// Deux modes de chiffrement disponibles :
-///   • symmetric  — clé AES auto-générée par conversation (stockée dans hive)
-///   • asymmetric — RSA-2048 + AES-GCM (signature incluse), nécessite les clés VPN
+/// ChatService — chat local avec hive + intégration WebSocket/Network
 class ChatService {
+  static final ChatService instance = ChatService._();
+  ChatService._();
+
   final _db          = DatabaseService.instance;
   final _authService = AuthService();
+  final _socket      = SocketService.instance;
 
   final Map<String, StreamController<List<ChatMessageModel>>> _msgControllers = {};
   final _convController = StreamController<List<Map<String, dynamic>>>.broadcast();
@@ -33,7 +34,6 @@ class ChatService {
     return '${t}_${(t * 9301 + 49297) % 233280}';
   }
 
-  /// Génère une clé AES-256 aléatoire encodée en base64.
   String _generateAesKey() {
     final bytes = List.generate(32, (_) => Random.secure().nextInt(256));
     return base64Encode(Uint8List.fromList(bytes));
@@ -56,8 +56,6 @@ class ChatService {
 
   // ── Conversations ─────────────────────────────────────────────────────────
 
-  /// Crée ou récupère une conversation. Génère automatiquement une clé symétrique
-  /// si la conversation est nouvelle.
   Future<String> getOrCreateConversation(String otherUserId, String otherUserEmail) async {
     final currentUser = await _authService.currentUser;
     if (currentUser == null) throw Exception('Utilisateur non connecté');
@@ -72,7 +70,6 @@ class ChatService {
     final receiverEmail = otherData?['email'] ?? otherUserEmail;
     final receiverName  = otherData?['displayName'] ?? otherUserEmail;
 
-    // Clé symétrique auto-générée pour cette conversation
     final symmetricKey = _generateAesKey();
 
     await _db.conversations.put(conversationId, {
@@ -82,13 +79,12 @@ class ChatService {
       'participantNames':  jsonEncode([currentUser.displayName, receiverName]),
       'lastMessageAt':     DateTime.now().toIso8601String(),
       'lastMessagePreview':'Conversation sécurisée',
-      'symmetricKey':      symmetricKey,   // ← clé auto
+      'symmetricKey':      symmetricKey,
     });
 
     return conversationId;
   }
 
-  /// Retourne la clé symétrique stockée pour une conversation.
   String? getConversationKey(String conversationId) {
     final conv = _db.conversations.get(conversationId);
     return conv?['symmetricKey'] as String?;
@@ -124,6 +120,7 @@ class ChatService {
             'name':           displayName,
             'lastMessage':    c['lastMessagePreview'] ?? 'Conversation sécurisée',
             'updatedAt':      c['lastMessageAt'],
+            'otherUserId':    otherId,
           };
         })
         .toList()
@@ -154,56 +151,74 @@ class ChatService {
 
   // ── Envoi ─────────────────────────────────────────────────────────────────
 
-  /// Envoie un message dans le mode choisi.
-  /// [mode] = 'symmetric' ou 'asymmetric'
-  /// [algorithm] = 'aes-gcm' ou 'chacha20' (seulement pour le mode symétrique)
   Future<void> sendMessage({
     required String receiverEmail,
     required String text,
     required String mode,
     String algorithm = 'aes-gcm',
-  }) async {
-    if (mode == 'asymmetric') {
-      await _sendAsymmetric(receiverEmail: receiverEmail, text: text);
-    } else {
-      await _sendSymmetric(receiverEmail: receiverEmail, text: text, algorithm: algorithm);
-    }
-  }
-
-  Future<void> _sendSymmetric({
-    required String receiverEmail,
-    required String text,
-    required String algorithm,
+    String type = 'text',
+    String? fileName,
+    int? fileSize,
   }) async {
     final currentUser = await _authService.currentUser;
     if (currentUser == null) throw Exception('Utilisateur non connecté');
 
     final receiverData = getUserByEmail(receiverEmail.trim().toLowerCase());
     if (receiverData == null) throw Exception('Utilisateur introuvable');
-
     final receiverId   = receiverData['id'] as String;
-    if (receiverId == currentUser.id) throw Exception('Tu ne peux pas t\'envoyer un message à toi-même');
 
     final conversationId = await getOrCreateConversation(receiverId, receiverEmail);
-
-    // Si la conversation n'a pas encore de clé symétrique (ex: ancienne conversation),
-    // on en génère une et on la persiste AVANT de chiffrer.
-    String? key = getConversationKey(conversationId);
-    if (key == null) {
-      key = _generateAesKey();
-      final conv = Map<String, dynamic>.from(_db.conversations.get(conversationId) ?? {});
-      conv['symmetricKey'] = key;
-      await _db.conversations.put(conversationId, conv);
-    }
-
-    final payload = await CryptoAvance.encryptMessage(
-      message: text, key: key, algorithm: algorithm,
-    );
-
     final msgId = _generateId();
     final now   = DateTime.now().toIso8601String();
-    final box   = await _db.messagesBox(conversationId);
 
+    String cipherText;
+    String nonce = '';
+    String mac = '';
+    String? encryptedAesKey;
+    String? iv;
+    String? signature;
+
+    if (mode == 'asymmetric') {
+      final prefs    = await SharedPreferences.getInstance();
+      final privJson = prefs.getString('rsa_priv_${currentUser.id}');
+      if (privJson == null) throw Exception('rsa_keys_missing');
+
+      final receiverPubJson = receiverData['rsaPublicKey'] as String?;
+      if (receiverPubJson == null) throw Exception('rsa_receiver_no_keys');
+
+      final privKey        = RsaService.decodePrivateKey(privJson);
+      final receiverPubKey = RsaService.decodePublicKey(receiverPubJson);
+
+      final msgBytes  = Uint8List.fromList(utf8.encode(text));
+      final sigBytes  = RsaService.sign(msgBytes, privKey);
+      signature       = base64Encode(sigBytes);
+
+      final aesKeyBytes = Uint8List.fromList(List.generate(32, (_) => Random.secure().nextInt(256)));
+      final aesKeyStr   = base64Encode(aesKeyBytes);
+      final payload     = '$text|SIG|$signature';
+      final encrypted   = await CryptoAvance.encryptMessage(message: payload, key: aesKeyStr);
+
+      cipherText      = encrypted.cipherText;
+      nonce           = encrypted.nonce;
+      mac             = encrypted.mac;
+      iv              = nonce; 
+      encryptedAesKey = base64Encode(RsaService.encryptWithPublicKey(aesKeyBytes, receiverPubKey));
+    } else {
+      String? key = getConversationKey(conversationId);
+      if (key == null) {
+        key = _generateAesKey();
+        final conv = Map<String, dynamic>.from(_db.conversations.get(conversationId) ?? {});
+        conv['symmetricKey'] = key;
+        await _db.conversations.put(conversationId, conv);
+      }
+      final payload = await CryptoAvance.encryptMessage(message: text, key: key, algorithm: algorithm);
+      cipherText = payload.cipherText;
+      nonce      = payload.nonce;
+      mac        = payload.mac;
+    }
+
+    // 1. Sauvegarde locale
+    final box = await _db.messagesBox(conversationId);
     await box.put(msgId, {
       'id':             msgId,
       'conversationId': conversationId,
@@ -213,90 +228,66 @@ class ChatService {
       'receiverId':     receiverId,
       'receiverEmail':  receiverEmail.trim().toLowerCase(),
       'receiverName':   receiverData['displayName'] ?? receiverEmail,
-      'encryptionMode': 'symmetric',
-      'cipherText':     payload.cipherText,
-      'nonce':          payload.nonce,
-      'mac':            payload.mac,
-      'algorithm':      payload.algorithm,
+      'encryptionMode': mode,
+      'cipherText':     cipherText,
+      'nonce':          nonce,
+      'mac':            mac,
+      'algorithm':      mode == 'asymmetric' ? 'rsa+aes-gcm' : algorithm,
+      'encryptedAesKey': encryptedAesKey,
+      'signature':      signature,
+      'iv':             iv,
       'createdAt':      now,
+      'type':           type,
+      'fileName':       fileName,
+      'fileSize':       fileSize,
+      'senderPlainText': text,
     });
 
-    _updateConvPreview(conversationId, now, 'Message chiffré (${payload.algorithm.toUpperCase()})');
+    // 2. Envoi via WebSocket
+    if (_socket.isConnected) {
+      _socket.sendChatMessage(
+        receiverId:     receiverId,
+        conversationId: conversationId,
+        cipherText:     cipherText,
+        mode:           mode,
+        algorithm:      mode == 'asymmetric' ? 'rsa+aes-gcm' : algorithm,
+        type:           type,
+        fileName:       fileName,
+        fileSize:       fileSize,
+        encryptedAesKey: encryptedAesKey,
+        iv:             iv,
+        signature:      signature,
+      );
+    }
+
+    String preview = type == 'text' ? (mode == 'asymmetric' ? 'Chiffré RSA' : 'Chiffré') : 'Fichier chiffré ($fileName)';
+    _updateConvPreview(conversationId, now, preview);
     _pushMessageUpdate(conversationId);
     _pushConversationUpdate();
   }
 
-  Future<void> _sendAsymmetric({
-    required String receiverEmail,
-    required String text,
-  }) async {
-    final currentUser = await _authService.currentUser;
-    if (currentUser == null) throw Exception('Utilisateur non connecté');
+  /// Sauvegarde un message reçu depuis le WebSocket/Network dans Hive
+  Future<void> saveReceivedMessage(Map<String, dynamic> data) async {
+    final conversationId = data['conversationId'] as String?;
+    if (conversationId == null) return;
 
-    // Vérifier que l'expéditeur a des clés RSA
-    final prefs    = await SharedPreferences.getInstance();
-    final privJson = prefs.getString('rsa_priv_${currentUser.id}');
-    if (privJson == null) throw Exception('rsa_keys_missing');
-
-    // Trouver le destinataire
-    final receiverData = getUserByEmail(receiverEmail.trim().toLowerCase());
-    if (receiverData == null) throw Exception('Utilisateur introuvable');
-    final receiverId   = receiverData['id'] as String;
-    if (receiverId == currentUser.id) throw Exception('Tu ne peux pas t\'envoyer un message à toi-même');
-
-    // Vérifier que le destinataire a des clés RSA
-    final receiverPubJson = receiverData['rsaPublicKey'] as String?;
-    if (receiverPubJson == null) throw Exception('rsa_receiver_no_keys');
-
-    // Chiffrement RSA+AES
-    final privKey        = RsaService.decodePrivateKey(privJson);
-    final receiverPubKey = RsaService.decodePublicKey(receiverPubJson);
-
-    // Signature du message
-    final msgBytes  = Uint8List.fromList(utf8.encode(text));
-    final signature = RsaService.sign(msgBytes, privKey);
-    final sigB64    = base64Encode(signature);
-
-    // Chiffrement AES-GCM du payload texte+signature
-    final aesKeyBytes = Uint8List.fromList(List.generate(32, (_) => Random.secure().nextInt(256)));
-    final aesKeyStr   = base64Encode(aesKeyBytes);
-    final payload     = '$text|SIG|$sigB64';
-    final encrypted   = await CryptoAvance.encryptMessage(message: payload, key: aesKeyStr);
-
-    // Chiffrement de la clé AES avec RSA
-    final encAesKey = RsaService.encryptWithPublicKey(aesKeyBytes, receiverPubKey);
-
-    final conversationId = await getOrCreateConversation(receiverId, receiverEmail);
-    final msgId          = _generateId();
-    final now            = DateTime.now().toIso8601String();
-    final box            = await _db.messagesBox(conversationId);
-
-    await box.put(msgId, {
-      'id':              msgId,
-      'conversationId':  conversationId,
-      'senderId':        currentUser.id,
-      'senderEmail':     currentUser.email,
-      'senderName':      currentUser.displayName,
-      'receiverId':      receiverId,
-      'receiverEmail':   receiverEmail.trim().toLowerCase(),
-      'receiverName':    receiverData['displayName'] ?? receiverEmail,
-      'encryptionMode':  'asymmetric',
-      'encryptedAesKey': base64Encode(encAesKey),
-      'cipherText':      encrypted.cipherText,
-      'nonce':           encrypted.nonce,
-      'mac':             encrypted.mac,
-      'algorithm':       'rsa+aes-gcm',
-      'senderPlainText': text,   // pour affichage côté expéditeur
-      'createdAt':       now,
-    });
-
-    _updateConvPreview(conversationId, now, 'Message chiffré (RSA+AES)');
+    final msgId = data['id'] ?? _generateId();
+    final box = await _db.messagesBox(conversationId);
+    
+    await box.put(msgId, data);
+    
+    _updateConvPreview(conversationId, data['createdAt'] ?? DateTime.now().toIso8601String(), 'Nouveau message');
     _pushMessageUpdate(conversationId);
     _pushConversationUpdate();
   }
 
   void _updateConvPreview(String convId, String now, String preview) async {
-    final conv = Map<String, dynamic>.from(_db.conversations.get(convId) ?? {});
+    final conv = Map<String, dynamic>.from(_db.conversations.get(convId) ?? {
+      'id': convId,
+      'participants': '[]',
+      'participantEmails': '[]',
+      'participantNames': '[]',
+    });
     conv['lastMessageAt']      = now;
     conv['lastMessagePreview'] = preview;
     await _db.conversations.put(convId, conv);
@@ -304,13 +295,10 @@ class ChatService {
 
   // ── Déchiffrement ─────────────────────────────────────────────────────────
 
-  /// Déchiffre un message automatiquement selon son mode.
-  /// Ne requiert plus de clé manuelle.
   Future<String> decryptMessage(ChatMessageModel msg) async {
     if (msg.encryptionMode == 'asymmetric') {
       return _decryptAsymmetric(msg);
     }
-    // Mode symétrique : récupère la clé stockée dans la conversation
     final key = getConversationKey(msg.conversationId) ?? '';
     if (key.isEmpty) return '🔒';
     try {
@@ -327,12 +315,10 @@ class ChatService {
     final currentUser = await _authService.currentUser;
     if (currentUser == null) return '🔒';
 
-    // Côté expéditeur : afficher le texte sauvegardé
     if (msg.senderId == currentUser.id) {
       return msg.senderPlainText.isNotEmpty ? msg.senderPlainText : '🔐 Message envoyé';
     }
 
-    // Côté destinataire : déchiffrer avec la clé privée RSA
     final prefs    = await SharedPreferences.getInstance();
     final privJson = prefs.getString('rsa_priv_${currentUser.id}');
     if (privJson == null) return '🔒 Clé RSA manquante';
@@ -346,7 +332,6 @@ class ChatService {
       final payload    = await CryptoAvance.decryptMessage(
         cipherText: msg.cipherText, nonce: msg.nonce, mac: msg.mac, key: aesKeyStr,
       );
-      // Extraire le texte (format : "texte|SIG|signature")
       const sep   = '|SIG|';
       final sepIdx = payload.lastIndexOf(sep);
       return sepIdx >= 0 ? payload.substring(0, sepIdx) : payload;
@@ -355,14 +340,9 @@ class ChatService {
     }
   }
 
-  // ── Photo de profil ───────────────────────────────────────────────────────
-
-  /// Retourne la photo base64 d'un utilisateur (lisible par tous).
   String? getUserPhoto(String userId) {
     return _db.users.get(userId)?['photoBase64'] as String?;
   }
-
-  // ── Vérification des clés RSA ─────────────────────────────────────────────
 
   Future<bool> currentUserHasRsaKeys() async {
     final user = await _authService.currentUser;

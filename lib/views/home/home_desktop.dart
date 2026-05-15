@@ -1,7 +1,10 @@
 import 'package:cryptoadv/widgets/common/app_navbar.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../components/backround.dart';
 import '../../core/localization/app_l10n.dart';
+import '../../providers/auth_provider.dart';
+import '../auth/auth_page.dart';
 import '../mot_de_passe/mdp_page.dart';
 import '../chiffrement/chiffrement_page.dart';
 import '../documentation/documentation_page.dart';
@@ -14,6 +17,7 @@ class HomeDesktop extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final l = AppL10n.of(context);
+    final bool isAuth = context.watch<AuthProvider>().isAuthenticated;
 
     return Scaffold(
       body: Stack(
@@ -73,17 +77,36 @@ class HomeDesktop extends StatelessWidget {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               _actionButton(
-                                label: "${l.t('start_now')} →",
+                                label: isAuth
+                                    ? "${l.t('our_tools')} →"
+                                    : "${l.t('start_now')} →",
                                 isPrimary: true,
                                 isDark: isDark,
-                                onTap: () {},
+                                onTap: () {
+                                  if (!isAuth) {
+                                    Navigator.push(context, MaterialPageRoute(
+                                        builder: (_) => const AuthPage(initialSignup: true)));
+                                  } else {
+                                    // Scroll vers les cartes (ou première tool)
+                                  }
+                                },
                               ),
                               const SizedBox(width: 20),
                               _actionButton(
-                                label: l.t('learn_more'),
+                                label: isAuth
+                                    ? l.t('documentation')
+                                    : l.t('login_btn'),
                                 isPrimary: false,
                                 isDark: isDark,
-                                onTap: () {},
+                                onTap: () {
+                                  if (!isAuth) {
+                                    Navigator.push(context, MaterialPageRoute(
+                                        builder: (_) => const AuthPage()));
+                                  } else {
+                                    Navigator.push(context, MaterialPageRoute(
+                                        builder: (_) => const DocumentationPage()));
+                                  }
+                                },
                               ),
                             ],
                           ),
@@ -111,9 +134,9 @@ class HomeDesktop extends StatelessWidget {
                             runSpacing: 40,
                             alignment: WrapAlignment.center,
                             children: [
-                              _featureCard(context, l.t('chiffrement'), l.t('feat_chiffrement_desc'), Icons.description, const ChiffrementPage(), isDark, l),
-                              _featureCard(context, l.t('mdp'), l.t('feat_mdp_desc'), Icons.lock, const MdpPage(), isDark, l),
-                              _featureCard(context, l.t('feat_vpn_title'), l.t('feat_vpn_desc'), Icons.vpn_lock_rounded, const VpnPage(), isDark, l),
+                              _featureCard(context, l.t('chiffrement'), l.t('feat_chiffrement_desc'), Icons.description, isAuth ? const ChiffrementPage() : null, isDark, l),
+                              _featureCard(context, l.t('mdp'), l.t('feat_mdp_desc'), Icons.lock, isAuth ? const MdpPage() : null, isDark, l),
+                              _featureCard(context, l.t('feat_vpn_title'), l.t('feat_vpn_desc'), Icons.vpn_lock_rounded, isAuth ? const VpnPage() : null, isDark, l),
                               _featureCard(context, l.t('documentation'), l.t('feat_doc_desc'), Icons.menu_book, const DocumentationPage(), isDark, l),
                             ],
                           ),

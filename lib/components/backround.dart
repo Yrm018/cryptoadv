@@ -46,9 +46,9 @@ class _CryptoBackgroundState extends State<CryptoBackground>
       if (i % 3 == 1) return const Color(0xFF06B6D4);
       return const Color(0xFF6366F1);
     } else {
-      if (i % 3 == 0) return const Color(0xFF2563EB);
-      if (i % 3 == 1) return const Color(0xFF0891B2);
-      return const Color(0xFF4F46E5);
+      if (i % 3 == 0) return const Color(0xFF3B82F6);
+      if (i % 3 == 1) return const Color(0xFF06B6D4);
+      return const Color(0xFF8B5CF6);
     }
   }
 
@@ -70,7 +70,7 @@ class _CryptoBackgroundState extends State<CryptoBackground>
                 return Stack(
                   fit: StackFit.expand,
                   children: [
-                    // Fond principal
+                    // Fond principal - Plus coloré en mode clair
                     Container(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -78,20 +78,20 @@ class _CryptoBackgroundState extends State<CryptoBackground>
                           end: Alignment.bottomRight,
                           colors: isDark
                               ? [
-                                  const Color(0xFF020617), // slate-950
-                                  const Color(0xFF172554), // blue-950
-                                  const Color(0xFF0F172A), // slate-900
+                                  const Color(0xFF020617),
+                                  const Color(0xFF172554),
+                                  const Color(0xFF0F172A),
                                 ]
                               : [
-                                  const Color(0xFFF8FAFC), // slate-50
-                                  const Color(0xFFEFF6FF), // blue-50
+                                  const Color(0xFFE0E7FF), // indigo-100
+                                  const Color(0xFFDBEAFE), // blue-100
                                   const Color(0xFFF1F5F9), // slate-100
                                 ],
                         ),
                       ),
                     ),
 
-                    // Couche 2
+                    // Couche 2 - Plus de présence
                     Container(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -99,20 +99,20 @@ class _CryptoBackgroundState extends State<CryptoBackground>
                           end: Alignment.bottomLeft,
                           colors: isDark
                               ? [
-                                  const Color(0x801E1B4B), // indigo-950 / 50
+                                  const Color(0x801E1B4B),
                                   Colors.transparent,
-                                  const Color(0x80083344), // cyan-like dark / 50
+                                  const Color(0x80083344),
                                 ]
                               : [
-                                  const Color(0x33BFDBFE), // blue-200 / 20
+                                  const Color(0x6693C5FD), // blue-300 / 40%
                                   Colors.transparent,
-                                  const Color(0x33CFFAFE), // cyan-100 / 20
+                                  const Color(0x66A5F3FC), // cyan-200 / 40%
                                 ],
                         ),
                       ),
                     ),
 
-                    // Couche 3
+                    // Couche 3 - Teintes violettes plus marquées
                     Container(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -121,12 +121,12 @@ class _CryptoBackgroundState extends State<CryptoBackground>
                           colors: isDark
                               ? [
                                   Colors.transparent,
-                                  const Color(0x4D3B0764), // purple-ish
+                                  const Color(0x4D3B0764),
                                   Colors.transparent,
                                 ]
                               : [
                                   Colors.transparent,
-                                  const Color(0x26DDD6FE), // purple-200 / 15
+                                  const Color(0x4DC084FC), // purple-400 / 30%
                                   Colors.transparent,
                                 ],
                         ),
@@ -135,7 +135,7 @@ class _CryptoBackgroundState extends State<CryptoBackground>
 
                     // Grille 3D
                     Opacity(
-                      opacity: isDark ? 0.15 : 0.08,
+                      opacity: isDark ? 0.15 : 0.12,
                       child: Transform(
                         alignment: Alignment.center,
                         transform: Matrix4.identity()
@@ -149,36 +149,36 @@ class _CryptoBackgroundState extends State<CryptoBackground>
                       ),
                     ),
 
-                    // Gros orbes lumineux
+                    // Gros orbes lumineux - Augmentation de l'opacité en mode clair
                     _buildOrb(
                       left: size.width * 0.05,
                       top: size.height * 0.02,
-                      diameter: 600,
-                      color: isDark ? const Color(0x333B82F6) : const Color(0x1A3B82F6),
+                      diameter: 700,
+                      color: isDark ? const Color(0x333B82F6) : const Color(0x4060A5FA), // blue-400 / 25%
                       phase: 0.0,
                       t: t,
                     ),
                     _buildOrb(
                       right: size.width * 0.02,
                       bottom: size.height * 0.05,
-                      diameter: 600,
-                      color: isDark ? const Color(0x3306B6D4) : const Color(0x1A06B6D4),
+                      diameter: 750,
+                      color: isDark ? const Color(0x3306B6D4) : const Color(0x4022D3EE), // cyan-400 / 25%
                       phase: 0.2,
                       t: t,
                     ),
                     _buildOrb(
                       right: size.width * 0.18,
                       top: size.height * 0.22,
-                      diameter: 500,
-                      color: isDark ? const Color(0x336366F1) : const Color(0x1A6366F1),
+                      diameter: 600,
+                      color: isDark ? const Color(0x336366F1) : const Color(0x40818CF8), // indigo-400 / 25%
                       phase: 0.4,
                       t: t,
                     ),
                     _buildOrb(
                       left: size.width * 0.32,
                       bottom: size.height * 0.08,
-                      diameter: 550,
-                      color: isDark ? const Color(0x26A855F7) : const Color(0x12A855F7),
+                      diameter: 650,
+                      color: isDark ? const Color(0x26A855F7) : const Color(0x33C084FC), // purple-400 / 20%
                       phase: 0.6,
                       t: t,
                     ),
@@ -197,7 +197,7 @@ class _CryptoBackgroundState extends State<CryptoBackground>
                         left: item.x * size.width,
                         top: item.y * size.height,
                         child: Opacity(
-                          opacity: isDark ? pulse : pulse * 0.6,
+                          opacity: isDark ? pulse : pulse * 0.4,
                           child: Transform.scale(
                             scale: 1 + 0.2 * sin(2 * pi * (t + item.delay)),
                             child: Text(
@@ -207,7 +207,7 @@ class _CryptoBackgroundState extends State<CryptoBackground>
                                 fontSize: item.fontSize,
                                 color: isDark
                                     ? const Color(0x663B82F6)
-                                    : const Color(0x992563EB),
+                                    : const Color(0x4D2563EB),
                               ),
                             ),
                           ),
@@ -217,7 +217,7 @@ class _CryptoBackgroundState extends State<CryptoBackground>
 
                     // Hexagones
                     Opacity(
-                      opacity: isDark ? 0.20 : 0.15,
+                      opacity: isDark ? 0.20 : 0.12,
                       child: CustomPaint(
                         painter: HexPainter(
                           items: _hexItems,
@@ -230,7 +230,7 @@ class _CryptoBackgroundState extends State<CryptoBackground>
 
                     // Réseau
                     Opacity(
-                      opacity: isDark ? 0.10 : 0.08,
+                      opacity: isDark ? 0.10 : 0.06,
                       child: CustomPaint(
                         painter: NetworkPainter(
                           items: _lineItems,
@@ -264,7 +264,7 @@ class _CryptoBackgroundState extends State<CryptoBackground>
                               shape: BoxShape.circle,
                               gradient: RadialGradient(
                                 colors: [
-                                  color.withOpacity(isDark ? 0.9 : 0.6),
+                                  color.withOpacity(isDark ? 0.9 : 0.4),
                                   color.withOpacity(0.0),
                                 ],
                               ),
@@ -302,7 +302,7 @@ class _CryptoBackgroundState extends State<CryptoBackground>
     required double phase,
     required double t,
   }) {
-    final scale = 0.95 + 0.1 * (0.5 + 0.5 * sin(2 * pi * (t + phase)));
+    final scale = 0.95 + 0.15 * (0.5 + 0.5 * sin(2 * pi * (t + phase)));
 
     return Positioned(
       left: left,
@@ -319,15 +319,15 @@ class _CryptoBackgroundState extends State<CryptoBackground>
             color: color,
             boxShadow: [
               BoxShadow(
-                color: color.withOpacity(0.7),
-                blurRadius: 120,
-                spreadRadius: 40,
+                color: color.withOpacity(0.6),
+                blurRadius: 150,
+                spreadRadius: 60,
               ),
             ],
           ),
           child: ClipOval(
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 120, sigmaY: 120),
+              filter: ImageFilter.blur(sigmaX: 100, sigmaY: 100),
               child: const SizedBox.expand(),
             ),
           ),
