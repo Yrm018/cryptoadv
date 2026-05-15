@@ -2,8 +2,9 @@ import 'package:cryptoadv/backend/crypto/mdp.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../components/backround.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../../core/localization/app_l10n.dart';
 import '../../services/history_service.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/common/app_drawer.dart';
 
 class MdpMobile extends StatefulWidget {
@@ -25,9 +26,9 @@ class _MdpMobileState extends State<MdpMobile> {
   PasswordAnalysis analysis = analyzePassword("");
 
   Future<void> _saveHistory(String password) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = await AuthService().currentUser;
     if (user == null) return;
-    await _historyService.addHistoryItem(userId: user.uid, type: 'password', algorithm: 'Generator', inputPreview: 'Mot de passe généré', result: password, isEncrypted: false);
+    await _historyService.addHistoryItem(userId: user.id, type: 'password', algorithm: 'Generator', inputPreview: 'Mot de passe généré', result: password, isEncrypted: false);
   }
 
   @override
@@ -47,10 +48,11 @@ class _MdpMobileState extends State<MdpMobile> {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final l = AppL10n.of(context);
 
     return Scaffold(
       drawer: const AppDrawer(currentPage: 'mdp'),
-      appBar: AppBar(title: const Text('Mots de passe'), backgroundColor: Colors.transparent, elevation: 0, iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black)),
+      appBar: AppBar(title: Text(l.t('mdp')), backgroundColor: Colors.transparent, elevation: 0, iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black)),
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
@@ -60,11 +62,11 @@ class _MdpMobileState extends State<MdpMobile> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  _buildTesterCard(isDark),
+                  _buildTesterCard(isDark, l),
                   const SizedBox(height: 20),
-                  _buildGeneratorCard(isDark),
+                  _buildGeneratorCard(isDark, l),
                   const SizedBox(height: 20),
-                  _buildConseilsCard(isDark),
+                  _buildConseilsCard(isDark, l),
                 ],
               ),
             ),
@@ -74,17 +76,17 @@ class _MdpMobileState extends State<MdpMobile> {
     );
   }
 
-  Widget _buildTesterCard(bool isDark) {
+  Widget _buildTesterCard(bool isDark, AppL10n l) {
     return _glassCard(
       isDark: isDark,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [Icon(Icons.security, color: isDark ? const Color(0xFF00D4FF) : const Color(0xFF2563EB), size: 30), const SizedBox(width: 10), Text('Tester', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1E293B)))]),
+          Row(children: [Icon(Icons.security, color: isDark ? const Color(0xFF00D4FF) : const Color(0xFF2563EB), size: 30), const SizedBox(width: 10), Text(l.t('tester_card_title_mobile'), style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1E293B)))]),
           const SizedBox(height: 16),
-          TextField(controller: controller, style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 14), decoration: _inputDeco("Saisir un mot de passe", isDark)),
+          TextField(controller: controller, style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 14), decoration: _inputDeco(l.t('enter_mdp_hint_mobile'), isDark)),
           const SizedBox(height: 20),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text("Force", style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontSize: 14)), Text(analysis.strengthLabel, style: TextStyle(color: isDark ? const Color(0xFF00D4FF) : const Color(0xFF2563EB), fontSize: 14, fontWeight: FontWeight.bold))]),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(l.t('strength_label_mobile'), style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontSize: 14)), Text(analysis.strengthLabel, style: TextStyle(color: isDark ? const Color(0xFF00D4FF) : const Color(0xFF2563EB), fontSize: 14, fontWeight: FontWeight.bold))]),
           const SizedBox(height: 8),
           ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: analysis.progress, minHeight: 8, backgroundColor: isDark ? Colors.white10 : Colors.black12, valueColor: AlwaysStoppedAnimation(isDark ? const Color(0xFF00D4FF) : const Color(0xFF3B82F6)))),
           const SizedBox(height: 20),
@@ -100,37 +102,37 @@ class _MdpMobileState extends State<MdpMobile> {
     );
   }
 
-  Widget _buildGeneratorCard(bool isDark) {
+  Widget _buildGeneratorCard(bool isDark, AppL10n l) {
     return _glassCard(
       isDark: isDark,
       child: Column(
         children: [
-          Row(children: [Icon(Icons.security_update, color: isDark ? const Color(0xFF00D4FF) : const Color(0xFF2563EB), size: 30), const SizedBox(width: 10), Text('Générer', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1E293B)))]),
+          Row(children: [Icon(Icons.security_update, color: isDark ? const Color(0xFF00D4FF) : const Color(0xFF2563EB), size: 30), const SizedBox(width: 10), Text(l.t('gen_card_title_mobile'), style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1E293B)))]),
           const SizedBox(height: 16),
-          TextField(readOnly: true, controller: controller2, style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 13), decoration: _inputDeco("Généré...", isDark).copyWith(suffixIcon: IconButton(icon: Icon(Icons.copy, color: isDark ? const Color(0xFF00D4FF) : const Color(0xFF2563EB), size: 20), onPressed: () { Clipboard.setData(ClipboardData(text: controller2.text)); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Copié !"), duration: Duration(seconds: 2))); }))),
+          TextField(readOnly: true, controller: controller2, style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 13), decoration: _inputDeco(l.t('gen_hint_mobile'), isDark).copyWith(suffixIcon: IconButton(icon: Icon(Icons.copy, color: isDark ? const Color(0xFF00D4FF) : const Color(0xFF2563EB), size: 20), onPressed: () { Clipboard.setData(ClipboardData(text: controller2.text)); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l.t('copied_mobile')), duration: const Duration(seconds: 2))); }))),
           const SizedBox(height: 16),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text("Longueur: ${longueur.toInt()}", style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontSize: 14)), Text("", style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 14, fontWeight: FontWeight.bold))]),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text("${l.t('length_label_mobile')}${longueur.toInt()}", style: TextStyle(color: isDark ? Colors.white70 : Colors.black54, fontSize: 14)), Text("", style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 14, fontWeight: FontWeight.bold))]),
           Slider(value: longueur, min: 8, max: 64, divisions: 56, activeColor: isDark ? const Color(0xFF00D4FF) : const Color(0xFF2563EB), onChanged: (v) => setState(() => longueur = v)),
-          _mdpCheckbox("Majuscules", majuscules, (v) => setState(() => majuscules = v!), isDark),
-          _mdpCheckbox("Minuscules", minuscules, (v) => setState(() => minuscules = v!), isDark),
-          _mdpCheckbox("Chiffres", chiffres, (v) => setState(() => chiffres = v!), isDark),
-          _mdpCheckbox("Spéciaux", caracteresSpeciaux, (v) => setState(() => caracteresSpeciaux = v!), isDark),
+          _mdpCheckbox(l.t('upper_case_mobile'), majuscules, (v) => setState(() => majuscules = v!), isDark),
+          _mdpCheckbox(l.t('lower_case_mobile'), minuscules, (v) => setState(() => minuscules = v!), isDark),
+          _mdpCheckbox(l.t('digits_label_mobile'), chiffres, (v) => setState(() => chiffres = v!), isDark),
+          _mdpCheckbox(l.t('special_chars_mobile'), caracteresSpeciaux, (v) => setState(() => caracteresSpeciaux = v!), isDark),
           const SizedBox(height: 16),
-          SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () async { final gen = generatePassword(majuscules, chiffres, caracteresSpeciaux, minuscules, longueur); setState(() => controller2.text = gen); await _saveHistory(gen); }, style: ElevatedButton.styleFrom(backgroundColor: isDark ? const Color(0xFF00D4FF) : const Color(0xFF2563EB), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: const Text("Générer", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)))),
+          SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () async { final gen = generatePassword(majuscules, chiffres, caracteresSpeciaux, minuscules, longueur); setState(() => controller2.text = gen); await _saveHistory(gen); }, style: ElevatedButton.styleFrom(backgroundColor: isDark ? const Color(0xFF00D4FF) : const Color(0xFF2563EB), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: Text(l.t('generate_btn'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)))),
         ],
       ),
     );
   }
 
-  Widget _buildConseilsCard(bool isDark) {
+  Widget _buildConseilsCard(bool isDark, AppL10n l) {
     return _glassCard(
       isDark: isDark,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text("Conseils", style: TextStyle(color: isDark ? Colors.white : const Color(0xFF0F172A), fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(l.t('tips_title_mobile'), style: TextStyle(color: isDark ? Colors.white : const Color(0xFF0F172A), fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
-        _conseilItem("Longueur", "12 caractères min.", isDark),
-        _conseilItem("Mélange", "Utilisez tous les types.", isDark),
-        _conseilItem("Unique", "Un MDP par compte.", isDark),
+        _conseilItem(l.t('tip_len_mobile'), l.t('tip_len_desc_mobile'), isDark),
+        _conseilItem(l.t('tip_mix_mobile'), l.t('tip_mix_desc_mobile'), isDark),
+        _conseilItem(l.t('tip_unique_mobile'), l.t('tip_unique_desc_mobile'), isDark),
       ]),
     );
   }

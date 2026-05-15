@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../core/database/database_service.dart';
+import '../services/auth_service.dart';
 import '../backend/crypto/cryptavance.dart';
 import '../backend/security/rsa_service.dart';
 import '../backend/security/pki_service.dart';
@@ -19,170 +21,160 @@ class VpnDecryptResult {
   final CertificateData? senderCert;
 
   const VpnDecryptResult({
-    required this.message,
-    required this.signatureValid,
-    required this.certificateValid,
-    required this.certRevoked,
-    required this.senderEmail,
-    required this.senderCert,
+    required this.message, required this.signatureValid,
+    required this.certificateValid, required this.certRevoked,
+    required this.senderEmail, required this.senderCert,
   });
 }
 
 class VpnService {
-  final _firestore = FirebaseFirestore.instance;
-  final _auth = FirebaseAuth.instance;
+  final _db = DatabaseService.instance;
+  final _auth = AuthService();
 
-  String get _uid => _auth.currentUser!.uid;
-  String get _email => (_auth.currentUser!.email ?? '').trim().toLowerCase();
+  // Récupère l'utilisateur courant (async car hive)
+  Future<LocalUser> _getUser() async {
+    final u = await _auth.currentUser;
+    if (u == null) throw Exception("Utilisateur non connecté");
+    return u;
+  }
 
-  // ─── Key & Certificate Management ─────────────────────────────
+  String _generateId() {
+    final t = DateTime.now().millisecondsSinceEpoch;
+    return '${t}_${(t * 9301 + 49297) % 233280}';
+  }
+
+  // ─── Key & Certificate Management ────────────────────────────────────────
 
   Future<bool> hasKeys() async {
+    final user = await _getUser();
     final prefs = await SharedPreferences.getInstance();
-    return prefs.containsKey('rsa_priv_$_uid');
+    return prefs.containsKey('rsa_priv_${user.id}');
   }
 
   Future<void> generateAndRegisterKeys() async {
-    // Heavy computation: run in isolate to avoid blocking UI
+    final user = await _getUser();
     final keys = await compute(generateKeyPairIsolated, 2048);
     final pubJson = keys['pub']!;
     final privJson = keys['priv']!;
 
-    // Store private key locally (never sent to server)
+    // Clé privée : stockée localement (jamais partagée)
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('rsa_priv_$_uid', privJson);
+    await prefs.setString('rsa_priv_${user.id}', privJson);
 
-    // Publish public key in Firestore
-    await _firestore.collection('users').doc(_uid).set(
-      {'rsaPublicKey': pubJson},
-      SetOptions(merge: true),
-    );
+    // Clé publique + serial : stockés dans le profil hive de l'utilisateur
+    final userData = Map<String, dynamic>.from(_db.users.get(user.id) ?? {});
+    userData['rsaPublicKey'] = pubJson;
+    await _db.users.put(user.id, userData);
 
-    // Request certificate from CA
     final cert = await PkiService.issueCertificate(
-      userEmail: _email,
-      userUid: _uid,
+      userEmail: user.email,
+      userUid: user.id,
       userPublicKeyJson: pubJson,
     );
 
-    await _firestore.collection('users').doc(_uid).set(
-      {'rsaCertSerial': cert.serialNumber},
-      SetOptions(merge: true),
-    );
+    userData['rsaCertSerial'] = cert.serialNumber;
+    await _db.users.put(user.id, userData);
   }
 
-  Future<CertificateData?> getMyCertificate() => PkiService.getCertificate(_uid);
+  Future<CertificateData?> getMyCertificate() async {
+    final user = await _getUser();
+    return PkiService.getCertificate(user.id);
+  }
 
   Future<String?> getMyPublicKey() async {
-    final doc = await _firestore.collection('users').doc(_uid).get();
-    return doc.data()?['rsaPublicKey'] as String?;
+    final user = await _getUser();
+    final data = _db.users.get(user.id);
+    return data?['rsaPublicKey'] as String?;
   }
 
-  // ─── Send Message (Alice flow) ────────────────────────────────
+  // ─── Send Message ─────────────────────────────────────────────────────────
 
   Future<void> sendMessage({
     required String receiverEmail,
     required String message,
   }) async {
-    // Get our private key
+    final user = await _getUser();
     final prefs = await SharedPreferences.getInstance();
-    final privJson = prefs.getString('rsa_priv_$_uid');
+    final privJson = prefs.getString('rsa_priv_${user.id}');
     if (privJson == null) {
       throw Exception('Clé privée introuvable — générez vos clés RSA d\'abord.');
     }
 
-    // Find receiver
-    final receiverUid = await _findUidByEmail(receiverEmail);
-    if (receiverUid == null) {
-      throw Exception('Aucun utilisateur trouvé avec cet email.');
-    }
-    final receiverPubJson = await _getPublicKeyForUser(receiverUid);
+    final receiverUid = _findUidByEmail(receiverEmail);
+    if (receiverUid == null) throw Exception('Aucun utilisateur trouvé.');
+
+    final receiverData = Map<String, dynamic>.from(_db.users.get(receiverUid) ?? {});
+    final receiverPubJson = receiverData['rsaPublicKey'] as String?;
     if (receiverPubJson == null) {
       throw Exception('Le destinataire n\'a pas encore généré ses clés RSA.');
     }
 
-    // Get our cert serial for CRL checking by receiver
-    final senderDoc = await _firestore.collection('users').doc(_uid).get();
-    final certSerial = (senderDoc.data()?['rsaCertSerial'] as String?) ?? '';
+    final certSerial = (Map<String, dynamic>.from(_db.users.get(user.id) ?? {}))['rsaCertSerial'] as String? ?? '';
 
     final privKey = RsaService.decodePrivateKey(privJson);
     final receiverPubKey = RsaService.decodePublicKey(receiverPubJson);
 
-    // Step 1 — Sign the message with our RSA private key
     final msgBytes = Uint8List.fromList(utf8.encode(message));
     final signature = RsaService.sign(msgBytes, privKey);
     final sigB64 = base64Encode(signature);
 
-    // Step 2 — Generate random AES-256 key
     final aesKeyBytes = Uint8List.fromList(
       List.generate(32, (_) => Random.secure().nextInt(256)),
     );
     final aesKeyStr = base64Encode(aesKeyBytes);
 
-    // Step 3 — AES-GCM encrypt [message|SIG|signature]
     final payload = '$message|SIG|$sigB64';
-    final encrypted = await CryptoAvance.encryptMessage(
-      message: payload,
-      key: aesKeyStr,
-    );
+    final encrypted = await CryptoAvance.encryptMessage(message: payload, key: aesKeyStr);
 
-    // Step 4 — RSA-OAEP encrypt the AES key with receiver's public key
     final encAesKey = RsaService.encryptWithPublicKey(aesKeyBytes, receiverPubKey);
 
-    // Step 5 — Deposit packet in VPN channel (Firestore)
-    final vpnMsg = VpnMessage(
-      id: '',
-      senderId: _uid,
-      senderEmail: _email,
-      receiverId: receiverUid,
-      receiverEmail: receiverEmail.trim().toLowerCase(),
-      encryptedAesKey: base64Encode(encAesKey),
-      cipherText: encrypted.cipherText,
-      nonce: encrypted.nonce,
-      mac: encrypted.mac,
-      senderCertSerial: certSerial,
-      timestamp: null,
-    );
-    await _firestore.collection('vpn_messages').add(vpnMsg.toMap());
-  }
-
-  // ─── Receive & Decrypt (Bob flow) ─────────────────────────────
-
-  Stream<List<VpnMessage>> getInbox() {
-    return _firestore
-        .collection('vpn_messages')
-        .where('receiverId', isEqualTo: _uid)
-        .snapshots()
-        .map((snap) {
-      final msgs =
-          snap.docs.map((d) => VpnMessage.fromMap(d.id, d.data())).toList();
-      msgs.sort((a, b) =>
-          (b.timestamp ?? DateTime(0)).compareTo(a.timestamp ?? DateTime(0)));
-      return msgs;
+    // Stocker dans hive (box vpn_<receiverUid> pour que le destinataire puisse le voir)
+    final box = await _db.messagesBox('vpn_$receiverUid');
+    final msgId = _generateId();
+    await box.put(msgId, {
+      'id': msgId,
+      'senderId': user.id,
+      'senderEmail': user.email,
+      'receiverId': receiverUid,
+      'receiverEmail': receiverEmail.trim().toLowerCase(),
+      'encryptedAesKey': base64Encode(encAesKey),
+      'cipherText': encrypted.cipherText,
+      'nonce': encrypted.nonce,
+      'mac': encrypted.mac,
+      'senderCertSerial': certSerial,
+      'timestamp': DateTime.now().toIso8601String(),
     });
   }
 
-  Future<VpnDecryptResult> decryptAndVerify(VpnMessage msg) async {
-    // Step 1 — Get our private key
-    final prefs = await SharedPreferences.getInstance();
-    final privJson = prefs.getString('rsa_priv_$_uid');
-    if (privJson == null) throw Exception('Clé privée introuvable.');
-    final privKey = RsaService.decodePrivateKey(privJson);
+  // ─── Receive & Decrypt ────────────────────────────────────────────────────
 
-    // Step 2 — RSA-OAEP decrypt the AES key
+  Stream<List<VpnMessage>> getInbox() async* {
+    final user = await _getUser();
+    final box = await _db.messagesBox('vpn_${user.id}');
+
+    final msgs = box.values
+        .map((m) => VpnMessage.fromMap(m['id'] ?? '', Map<String, dynamic>.from(m)))
+        .toList()
+      ..sort((a, b) => (b.timestamp ?? DateTime(0)).compareTo(a.timestamp ?? DateTime(0)));
+
+    yield msgs;
+  }
+
+  Future<VpnDecryptResult> decryptAndVerify(VpnMessage msg) async {
+    final user = await _getUser();
+    final prefs = await SharedPreferences.getInstance();
+    final privJson = prefs.getString('rsa_priv_${user.id}');
+    if (privJson == null) throw Exception('Clé privée introuvable.');
+
+    final privKey = RsaService.decodePrivateKey(privJson);
     final encAesKey = base64Decode(msg.encryptedAesKey);
     final aesKeyBytes = RsaService.decryptWithPrivateKey(encAesKey, privKey);
     final aesKeyStr = base64Encode(aesKeyBytes);
 
-    // Step 3 — AES-GCM decrypt the payload
     final payload = await CryptoAvance.decryptMessage(
-      cipherText: msg.cipherText,
-      nonce: msg.nonce,
-      mac: msg.mac,
-      key: aesKeyStr,
+      cipherText: msg.cipherText, nonce: msg.nonce, mac: msg.mac, key: aesKeyStr,
     );
 
-    // Step 4 — Split message and signature
     const sep = '|SIG|';
     final sepIdx = payload.lastIndexOf(sep);
     if (sepIdx < 0) throw Exception('Format de paquet invalide.');
@@ -190,67 +182,51 @@ class VpnService {
     final sigB64 = payload.substring(sepIdx + sep.length);
     final signature = base64Decode(sigB64);
 
-    // Step 5 — Verify sender's certificate (via CA)
     final cert = await PkiService.getCertificate(msg.senderId);
-    bool certValid = false;
-    bool certRevoked = false;
-
+    bool certValid = false, certRevoked = false;
     if (cert != null) {
       certValid = await PkiService.verifyCertificate(cert);
       certRevoked = await PkiService.isRevoked(cert.serialNumber);
     }
 
-    // Step 6 — Verify digital signature with sender's public key (from cert)
     bool sigValid = false;
     if (cert != null && certValid && !certRevoked) {
       final senderPubKey = RsaService.decodePublicKey(cert.publicKey);
-      final msgBytes = Uint8List.fromList(utf8.encode(plainMessage));
-      sigValid = RsaService.verify(msgBytes, signature, senderPubKey);
+      sigValid = RsaService.verify(Uint8List.fromList(utf8.encode(plainMessage)), signature, senderPubKey);
     }
 
     return VpnDecryptResult(
-      message: plainMessage,
-      signatureValid: sigValid,
-      certificateValid: certValid,
-      certRevoked: certRevoked,
-      senderEmail: msg.senderEmail,
-      senderCert: cert,
+      message: plainMessage, signatureValid: sigValid,
+      certificateValid: certValid, certRevoked: certRevoked,
+      senderEmail: msg.senderEmail, senderCert: cert,
     );
   }
 
-  // ─── Security Tests ───────────────────────────────────────────
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  String? _findUidByEmail(String email) {
+    final normalized = email.trim().toLowerCase();
+    for (final entry in _db.users.toMap().entries) {
+      if (entry.value['email'] == normalized) return entry.key as String;
+    }
+    return null;
+  }
 
   Future<void> revokeMyCertificate() async {
-    final doc = await _firestore.collection('users').doc(_uid).get();
-    final serial = doc.data()?['rsaCertSerial'] as String?;
+    final user = await _getUser();
+    final data = _db.users.get(user.id);
+    final serial = data?['rsaCertSerial'] as String?;
     if (serial == null) throw Exception('Aucun certificat trouvé.');
     await PkiService.revokeCertificate(serial);
   }
 
   Future<void> revokeUserByEmail(String email) async {
-    final uid = await _findUidByEmail(email);
+    final uid = _findUidByEmail(email);
     if (uid == null) throw Exception('Utilisateur introuvable.');
     final cert = await PkiService.getCertificate(uid);
-    if (cert == null) throw Exception('Certificat introuvable pour cet utilisateur.');
+    if (cert == null) throw Exception('Certificat introuvable.');
     await PkiService.revokeCertificate(cert.serialNumber);
   }
 
   Future<List<String>> getCrl() => PkiService.getCrl();
-
-  // ─── Helpers ──────────────────────────────────────────────────
-
-  Future<String?> _findUidByEmail(String email) async {
-    final result = await _firestore
-        .collection('users')
-        .where('email', isEqualTo: email.trim().toLowerCase())
-        .limit(1)
-        .get();
-    if (result.docs.isEmpty) return null;
-    return result.docs.first.id;
-  }
-
-  Future<String?> _getPublicKeyForUser(String uid) async {
-    final doc = await _firestore.collection('users').doc(uid).get();
-    return doc.data()?['rsaPublicKey'] as String?;
-  }
 }

@@ -1,0 +1,26 @@
+# Dart/Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Build artifacts
+build/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Flutter metadata
+.metadata
+
+# Platforms (générés automatiquement)
+ios/
+android/
+linux/
+macos/
+windows/
+bin/
+
+# Divers
+*.log

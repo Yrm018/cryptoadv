@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../components/backround.dart';
+import '../../core/localization/app_l10n.dart';
 import '../../widgets/common/app_drawer.dart';
 
 class HistoryMobile extends StatelessWidget {
@@ -8,11 +9,12 @@ class HistoryMobile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final l = AppL10n.of(context);
 
     return Scaffold(
       drawer: const AppDrawer(currentPage: 'history'),
       appBar: AppBar(
-        title: const Text('Historique'),
+        title: Text(l.t('history')),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black),
@@ -31,11 +33,11 @@ class HistoryMobile extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text("Historique", style: TextStyle(color: isDark ? Colors.white : const Color(0xFF0F172A), fontSize: 24, fontWeight: FontWeight.bold)),
+                        Text(l.t('history_title_mobile'), style: TextStyle(color: isDark ? Colors.white : const Color(0xFF0F172A), fontSize: 24, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 16),
-                        _historyItem(icon: Icons.fingerprint, title: "Hachage", subtitle: "SHA-256", value: "2cf24dba...", isDark: isDark),
-                        _historyItem(icon: Icons.lock_outline, title: "Chiffrement", subtitle: "César (3)", value: "KHOOR...", isDark: isDark),
-                        _historyItem(icon: Icons.password, title: "Génération", subtitle: "Mot de passe", value: "A7!kP9...", isDark: isDark),
+                        _historyItem(icon: Icons.fingerprint, title: l.t('hachage'), subtitle: "SHA-256", value: "2cf24dba...", isDark: isDark),
+                        _historyItem(icon: Icons.lock_outline, title: l.t('chiffrement'), subtitle: "César (3)", value: "KHOOR...", isDark: isDark),
+                        _historyItem(icon: Icons.password, title: l.t('mdp'), subtitle: l.t('password'), value: "A7!kP9...", isDark: isDark),
                       ],
                     ),
                   ),

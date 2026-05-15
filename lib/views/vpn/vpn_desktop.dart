@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../components/backround.dart';
+import '../../core/localization/app_l10n.dart';
 import '../../models/certificate_model.dart';
-import '../../models/vpn_message_model.dart';
 import '../../services/vpn_service.dart';
 import '../../widgets/common/app_navbar.dart';
 
@@ -22,13 +22,6 @@ class _VpnDesktopState extends State<VpnDesktop> with SingleTickerProviderStateM
   CertificateData? _myCert;
   String? _myPublicKey;
 
-  final _receiverCtrl = TextEditingController();
-  final _messageCtrl = TextEditingController();
-  bool _isSending = false;
-  String? _sendStep;
-  String? _sendError;
-  bool _sendSuccess = false;
-
   final _revokeEmailCtrl = TextEditingController();
   bool _isRevoking = false;
   bool _isRevokingSelf = false;
@@ -38,15 +31,13 @@ class _VpnDesktopState extends State<VpnDesktop> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     _loadPkiStatus();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
-    _receiverCtrl.dispose();
-    _messageCtrl.dispose();
     _revokeEmailCtrl.dispose();
     super.dispose();
   }
@@ -59,131 +50,66 @@ class _VpnDesktopState extends State<VpnDesktop> with SingleTickerProviderStateM
 
   Future<void> _loadCertificate() async {
     final cert = await _vpnService.getMyCertificate();
-    final pub = await _vpnService.getMyPublicKey();
+    final pub  = await _vpnService.getMyPublicKey();
     if (mounted) setState(() { _myCert = cert; _myPublicKey = pub; });
   }
 
-  Future<void> _generateKeys() async {
-    setState(() { _isGenerating = true; _sendError = null; });
+  Future<void> _generateKeys(AppL10n l) async {
+    setState(() { _isGenerating = true; });
     try {
       await _vpnService.generateAndRegisterKeys();
       await _loadPkiStatus();
-      if (mounted) _showSnack('Clés RSA générées avec succès !', success: true);
+      if (mounted) _showSnack(l.t('vpn_gen_keys_success'), success: true);
     } catch (e) {
-      if (mounted) _showSnack('Erreur : $e');
+      if (mounted) _showSnack('${l.t('error_prefix')} : $e');
     } finally {
       if (mounted) setState(() => _isGenerating = false);
     }
   }
 
-  Future<void> _sendMessage() async {
-    final receiver = _receiverCtrl.text.trim();
-    final message = _messageCtrl.text.trim();
-    if (receiver.isEmpty || message.isEmpty) return;
-    setState(() { _isSending = true; _sendError = null; _sendSuccess = false; _sendStep = 'Signature RSA...'; });
-    try {
-      await _vpnService.sendMessage(receiverEmail: receiver, message: message);
-      if (mounted) setState(() { _sendSuccess = true; _sendStep = 'Envoyé avec succès !'; _messageCtrl.clear(); });
-    } catch (e) {
-      if (mounted) setState(() { _sendError = e.toString(); _sendStep = null; });
-    } finally {
-      if (mounted) setState(() => _isSending = false);
-    }
-  }
-
-  Future<void> _openDecryptDialog(VpnMessage msg) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const AlertDialog(
-        backgroundColor: Color(0xFF1E1E2E),
-        content: SizedBox(height: 80, child: Center(child: CircularProgressIndicator())),
-        title: Text('Déchiffrement RSA+AES...', style: TextStyle(color: Colors.white)),
-      ),
-    );
-    try {
-      final result = await _vpnService.decryptAndVerify(msg);
-      if (!mounted) return;
-      Navigator.pop(context);
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          backgroundColor: const Color(0xFF1E1E2E),
-          title: const Row(children: [
-            Icon(Icons.lock_open, color: Colors.blue),
-            SizedBox(width: 8),
-            Text('Message déchiffré', style: TextStyle(color: Colors.white)),
-          ]),
-          content: SizedBox(width: 500, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              _securityBadge(Icons.verified_user, 'Certificat', result.certificateValid && !result.certRevoked),
-              const SizedBox(width: 8),
-              _securityBadge(Icons.draw, 'Signature', result.signatureValid),
-              if (result.certRevoked) ...[const SizedBox(width: 8), _securityBadge(Icons.block, 'Révoqué', false)],
-            ]),
-            const SizedBox(height: 16),
-            Text('De : ${result.senderEmail}', style: const TextStyle(color: Colors.white54, fontSize: 13)),
-            if (result.senderCert != null)
-              Text('Cert expire : ${result.senderCert!.notAfter}', style: const TextStyle(color: Colors.white38, fontSize: 12)),
-            const Divider(color: Colors.white12, height: 24),
-            SelectableText(result.message, style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.5)),
-          ]))),
-          actions: [
-            TextButton(
-              onPressed: () { Clipboard.setData(ClipboardData(text: result.message)); _showSnack('Message copié !', success: true); },
-              child: const Text('Copier'),
-            ),
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer')),
-          ],
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      Navigator.pop(context);
-      _showSnack('Erreur de déchiffrement : $e');
-    }
-  }
-
-  Future<void> _loadCrl() async {
+  Future<void> _loadCrl(AppL10n l) async {
     setState(() => _crlLoading = true);
     try {
       final crl = await _vpnService.getCrl();
       if (mounted) setState(() => _crl = crl);
     } catch (e) {
-      if (mounted) _showSnack('Erreur CRL : $e');
+      if (mounted) _showSnack('${l.t('error_prefix')} : $e');
     } finally {
       if (mounted) setState(() => _crlLoading = false);
     }
   }
 
-  Future<void> _revokeByEmail() async {
+  Future<void> _revokeByEmail(AppL10n l) async {
     final email = _revokeEmailCtrl.text.trim();
     if (email.isEmpty) return;
     setState(() => _isRevoking = true);
     try {
       await _vpnService.revokeUserByEmail(email);
       if (mounted) {
-        _showSnack('Certificat de $email révoqué.', success: true);
+        _showSnack(l.t('vpn_revoked_success').replaceFirst('{email}', email), success: true);
         _revokeEmailCtrl.clear();
-        _loadCrl();
+        _loadCrl(l);
       }
     } catch (e) {
-      if (mounted) _showSnack('Erreur : $e');
+      if (mounted) _showSnack('${l.t('error_prefix')} : $e');
     } finally {
       if (mounted) setState(() => _isRevoking = false);
     }
   }
 
-  Future<void> _revokeSelf() async {
+  Future<void> _revokeSelf(AppL10n l) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E2E),
-        title: const Text('Confirmer la révocation', style: TextStyle(color: Colors.white)),
-        content: const Text('Révoquer votre certificat rendra vos messages futurs non vérifiables. Continuer ?', style: TextStyle(color: Colors.white70)),
+        title: Text(l.t('vpn_revoke_confirm_title'), style: const TextStyle(color: Colors.white)),
+        content: Text(l.t('vpn_revoke_confirm_desc'), style: const TextStyle(color: Colors.white70)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Révoquer', style: TextStyle(color: Colors.redAccent))),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l.t('vpn_cancel'))),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(l.t('vpn_revoke_btn'), style: const TextStyle(color: Colors.redAccent)),
+          ),
         ],
       ),
     );
@@ -191,9 +117,9 @@ class _VpnDesktopState extends State<VpnDesktop> with SingleTickerProviderStateM
     setState(() => _isRevokingSelf = true);
     try {
       await _vpnService.revokeMyCertificate();
-      if (mounted) { _showSnack('Votre certificat a été révoqué.'); _loadCrl(); }
+      if (mounted) { _showSnack(l.t('vpn_my_revoked')); _loadCrl(l); }
     } catch (e) {
-      if (mounted) _showSnack('Erreur : $e');
+      if (mounted) _showSnack('${l.t('error_prefix')} : $e');
     } finally {
       if (mounted) setState(() => _isRevokingSelf = false);
     }
@@ -209,6 +135,7 @@ class _VpnDesktopState extends State<VpnDesktop> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final l = AppL10n.of(context);
 
     return Scaffold(
       body: Stack(
@@ -232,11 +159,9 @@ class _VpnDesktopState extends State<VpnDesktop> with SingleTickerProviderStateM
                           : [const Color(0xFF3B82F6), const Color(0xFF2563EB)]),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    tabs: const [
-                      Tab(icon: Icon(Icons.key, size: 16), text: 'Clés & Cert'),
-                      Tab(icon: Icon(Icons.send, size: 16), text: 'Envoyer'),
-                      Tab(icon: Icon(Icons.inbox, size: 16), text: 'Réception'),
-                      Tab(icon: Icon(Icons.security, size: 16), text: 'Tests'),
+                    tabs: [
+                      Tab(icon: const Icon(Icons.key, size: 16),      text: l.t('vpn_tab_keys')),
+                      Tab(icon: const Icon(Icons.security, size: 16), text: l.t('vpn_tab_tests')),
                     ],
                   ),
                 ),
@@ -245,10 +170,8 @@ class _VpnDesktopState extends State<VpnDesktop> with SingleTickerProviderStateM
                   child: TabBarView(
                     controller: _tabController,
                     children: [
-                      _buildPkiTab(isDark),
-                      _buildSendTab(isDark),
-                      _buildInboxTab(isDark),
-                      _buildTestsTab(isDark),
+                      _buildPkiTab(isDark, l),
+                      _buildTestsTab(isDark, l),
                     ],
                   ),
                 ),
@@ -260,269 +183,224 @@ class _VpnDesktopState extends State<VpnDesktop> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildPkiTab(bool isDark) {
-    if (!_hasKeys) return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-      const Icon(Icons.lock_outlined, size: 80, color: Colors.white24),
-      const SizedBox(height: 20),
-      const Text('Aucune clé RSA configurée', style: TextStyle(color: Colors.white70, fontSize: 20, fontWeight: FontWeight.bold)),
-      const SizedBox(height: 8),
-      const Text('Générez votre paire de clés pour activer le VPN sécurisé', style: TextStyle(color: Colors.white38)),
-      const SizedBox(height: 32),
-      ElevatedButton.icon(
-        onPressed: _isGenerating ? null : _generateKeys,
-        icon: _isGenerating
-            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-            : const Icon(Icons.vpn_key),
-        label: Text(_isGenerating ? 'Génération RSA 2048...' : 'Générer Clés RSA'),
-        style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 16)),
-      ),
-    ]));
+  // ─── Onglet Clés & Certificats ────────────────────────────────────────────
+
+  Widget _buildPkiTab(bool isDark, AppL10n l) {
+    if (!_hasKeys) {
+      return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.lock_outlined, size: 80, color: Colors.white24),
+        const SizedBox(height: 20),
+        Text(l.t('vpn_no_keys_title'),
+          style: const TextStyle(color: Colors.white70, fontSize: 20, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Text(l.t('vpn_no_keys_sub'),
+          style: const TextStyle(color: Colors.white38)),
+        const SizedBox(height: 32),
+        ElevatedButton.icon(
+          onPressed: _isGenerating ? null : () => _generateKeys(l),
+          icon: _isGenerating
+              ? const SizedBox(width: 16, height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.vpn_key),
+          label: Text(_isGenerating ? l.t('vpn_gen_keys_loading') : l.t('vpn_gen_keys_btn')),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 16)),
+        ),
+      ]));
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: _glassCard(isDark: isDark, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Row(children: [
-            Icon(Icons.vpn_key, color: Colors.blue, size: 18),
-            SizedBox(width: 8),
-            Text('Ma Clé Publique RSA', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-          ]),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8)),
-            child: SelectableText(_myPublicKey ?? '', style: const TextStyle(color: Colors.blue, fontFamily: 'monospace', fontSize: 11)),
-          ),
-          const SizedBox(height: 8),
-          TextButton.icon(
-            onPressed: () { Clipboard.setData(ClipboardData(text: _myPublicKey ?? '')); _showSnack('Clé publique copiée !', success: true); },
-            icon: const Icon(Icons.copy, size: 14),
-            label: const Text('Copier la clé'),
-          ),
-        ]))),
-        const SizedBox(width: 16),
-        Expanded(child: Column(children: [
-          if (_myCert != null) _glassCard(isDark: isDark, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Row(children: [
-              Icon(Icons.verified_user, color: Colors.green, size: 18),
-              SizedBox(width: 8),
-              Text('Mon Certificat X.509', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+        // Clé publique
+        Expanded(child: _glassCard(isDark: isDark, child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Icon(Icons.vpn_key, color: Colors.blue, size: 18),
+              const SizedBox(width: 8),
+              Text(l.t('vpn_my_pub_key'),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
             ]),
-            const SizedBox(height: 12),
-            _certInfoRow('Sujet', _myCert!.subject),
-            const SizedBox(height: 6),
-            _certInfoRow('Expire le', _myCert!.notAfter.toString()),
             const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.green.withOpacity(0.4)),
-              ),
-              child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.check_circle, size: 14, color: Colors.green),
-                SizedBox(width: 6),
-                Text('Certificat actif', style: TextStyle(color: Colors.green, fontSize: 13)),
-              ]),
+                color: Colors.black26, borderRadius: BorderRadius.circular(8)),
+              child: SelectableText(
+                _myPublicKey ?? '',
+                style: const TextStyle(color: Colors.blue, fontFamily: 'monospace', fontSize: 11)),
             ),
-          ])),
-          if (_myCert == null) _glassCard(isDark: isDark, child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Icon(Icons.pending, color: Colors.orange, size: 18),
-              SizedBox(width: 8),
-              Text('Certificat X.509', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-            ]),
-            SizedBox(height: 12),
-            Text('En attente de l\'autorité de certification.', style: TextStyle(color: Colors.white54)),
-          ])),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: _myPublicKey ?? ''));
+                _showSnack(l.t('vpn_key_copied'), success: true);
+              },
+              icon: const Icon(Icons.copy, size: 14),
+              label: Text(l.t('vpn_copy_key')),
+            ),
+          ],
+        ))),
+        const SizedBox(width: 16),
+        // Certificat
+        Expanded(child: Column(children: [
+          _glassCard(isDark: isDark, child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Icon(
+                  _myCert != null ? Icons.verified_user : Icons.pending,
+                  color: _myCert != null ? Colors.green : Colors.orange,
+                  size: 18),
+                const SizedBox(width: 8),
+                Text(l.t('vpn_my_cert'),
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+              ]),
+              const SizedBox(height: 12),
+              if (_myCert != null) ...[
+                _certInfoRow(l.t('vpn_subject'), _myCert!.subject),
+                const SizedBox(height: 6),
+                _certInfoRow(l.t('vpn_expires'), _myCert!.notAfter.toString()),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.withOpacity(0.4)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.check_circle, size: 14, color: Colors.green),
+                    const SizedBox(width: 6),
+                    Text(l.t('vpn_cert_active'),
+                      style: const TextStyle(color: Colors.green, fontSize: 13)),
+                  ]),
+                ),
+              ] else
+                Text(l.t('vpn_cert_pending'),
+                  style: const TextStyle(color: Colors.white54)),
+            ],
+          )),
         ])),
       ]),
     );
   }
 
-  Widget _buildSendTab(bool isDark) => SingleChildScrollView(
-    padding: const EdgeInsets.all(24),
-    child: Center(child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 600),
-      child: _glassCard(isDark: isDark, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Row(children: [
-          Icon(Icons.lock, color: Colors.blue, size: 18),
-          SizedBox(width: 8),
-          Text('Envoyer un message chiffré', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-        ]),
-        const SizedBox(height: 4),
-        const Text('RSA-OAEP 2048 + AES-256-GCM avec signature numérique', style: TextStyle(color: Colors.white38, fontSize: 12)),
-        const SizedBox(height: 20),
-        TextField(controller: _receiverCtrl, decoration: _fieldDeco('Email destinataire', isDark, Icons.email)),
-        const SizedBox(height: 12),
-        TextField(controller: _messageCtrl, maxLines: 5, decoration: _fieldDeco('Message...', isDark, Icons.message)),
-        const SizedBox(height: 20),
-        if (_sendStep != null) Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: (_sendSuccess ? Colors.green : Colors.blue).withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: (_sendSuccess ? Colors.green : Colors.blue).withOpacity(0.3)),
-          ),
-          child: Row(children: [
-            if (_isSending) const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-            if (!_isSending && _sendSuccess) const Icon(Icons.check_circle, color: Colors.green, size: 16),
-            const SizedBox(width: 8),
-            Text(_sendStep!, style: TextStyle(color: _sendSuccess ? Colors.green : Colors.blue, fontSize: 13)),
-          ]),
-        ),
-        if (_sendError != null) Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.red.withOpacity(0.3))),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Icon(Icons.error_outline, color: Colors.redAccent, size: 16),
-            const SizedBox(width: 8),
-            Expanded(child: Text(_sendError!, style: const TextStyle(color: Colors.redAccent, fontSize: 13))),
-          ]),
-        ),
-        SizedBox(width: double.infinity, child: ElevatedButton.icon(
-          onPressed: _isSending ? null : _sendMessage,
-          icon: _isSending
-              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : const Icon(Icons.send),
-          label: Text(_isSending ? 'Chiffrement & envoi...' : 'Envoyer Sécurisé'),
-          style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-        )),
-      ])),
-    )),
-  );
+  // ─── Onglet Tests & Révocation ────────────────────────────────────────────
 
-  Widget _buildInboxTab(bool isDark) => StreamBuilder<List<VpnMessage>>(
-    stream: _vpnService.getInbox(),
-    builder: (context, snap) {
-      if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-      final msgs = snap.data!;
-      if (msgs.isEmpty) return const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.inbox, size: 64, color: Colors.white24),
-        SizedBox(height: 16),
-        Text('Aucun message reçu', style: TextStyle(color: Colors.white38, fontSize: 18)),
-        SizedBox(height: 8),
-        Text('Les messages chiffrés apparaîtront ici', style: TextStyle(color: Colors.white24, fontSize: 13)),
-      ]));
-      return ListView.builder(
-        padding: const EdgeInsets.all(24),
-        itemCount: msgs.length,
-        itemBuilder: (context, i) => _messageTile(msgs[i], isDark),
-      );
-    },
-  );
-
-  Widget _messageTile(VpnMessage msg, bool isDark) => _glassCard(isDark: isDark, child: Row(children: [
-    Container(
-      width: 44, height: 44,
-      decoration: BoxDecoration(color: Colors.blue.withOpacity(0.15), shape: BoxShape.circle),
-      child: const Icon(Icons.lock, color: Colors.blue, size: 20),
-    ),
-    const SizedBox(width: 12),
-    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(msg.senderEmail, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-      const SizedBox(height: 2),
-      const Text('Message chiffré RSA-OAEP + AES-256-GCM', style: TextStyle(color: Colors.white38, fontSize: 12)),
-      if (msg.timestamp != null)
-        Text(msg.timestamp.toString().substring(0, 16), style: const TextStyle(color: Colors.white24, fontSize: 11)),
-    ])),
-    ElevatedButton.icon(
-      onPressed: () => _openDecryptDialog(msg),
-      icon: const Icon(Icons.lock_open, size: 14),
-      label: const Text('Déchiffrer'),
-      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10), textStyle: const TextStyle(fontSize: 12)),
-    ),
-  ]));
-
-  Widget _buildTestsTab(bool isDark) => SingleChildScrollView(
+  Widget _buildTestsTab(bool isDark, AppL10n l) => SingleChildScrollView(
     padding: const EdgeInsets.all(24),
     child: Column(children: [
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: _glassCard(isDark: isDark, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Row(children: [
-            Icon(Icons.block, color: Colors.redAccent, size: 18),
-            SizedBox(width: 8),
-            Text('Révocation de certificat', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-          ]),
-          const SizedBox(height: 4),
-          const Text('Révoquer un certificat via la CRL', style: TextStyle(color: Colors.white38, fontSize: 12)),
-          const SizedBox(height: 16),
-          TextField(controller: _revokeEmailCtrl, decoration: _fieldDeco('Email utilisateur', isDark, Icons.person)),
-          const SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: ElevatedButton.icon(
-              onPressed: _isRevoking ? null : _revokeByEmail,
-              icon: _isRevoking
-                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.gpp_bad, size: 16),
-              label: Text(_isRevoking ? 'Révocation...' : 'Révoquer'),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            )),
-            const SizedBox(width: 8),
-            ElevatedButton.icon(
-              onPressed: _isRevokingSelf ? null : _revokeSelf,
-              icon: const Icon(Icons.person_off, size: 16),
-              label: const Text('Mon cert'),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange),
-            ),
-          ]),
-        ]))),
-        const SizedBox(width: 16),
-        Expanded(child: _glassCard(isDark: isDark, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            const Row(children: [
-              Icon(Icons.list_alt, color: Colors.amber, size: 18),
-              SizedBox(width: 8),
-              Text('CRL — Liste de révocation', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-            ]),
-            IconButton(
-              icon: _crlLoading
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.refresh, color: Colors.white54),
-              onPressed: _crlLoading ? null : _loadCrl,
-            ),
-          ]),
-          const SizedBox(height: 8),
-          if (_crl.isEmpty) const Text('Appuyez sur actualiser pour charger la CRL.', style: TextStyle(color: Colors.white38, fontSize: 13)),
-          ..._crl.map((serial) => Container(
-            margin: const EdgeInsets.only(bottom: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.red.withOpacity(0.3)),
-            ),
-            child: Row(children: [
-              const Icon(Icons.cancel, color: Colors.redAccent, size: 14),
+        // Révocation
+        Expanded(child: _glassCard(isDark: isDark, child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Icon(Icons.block, color: Colors.redAccent, size: 18),
               const SizedBox(width: 8),
-              Expanded(child: Text(serial, style: const TextStyle(color: Colors.redAccent, fontFamily: 'monospace', fontSize: 12))),
+              Text(l.t('vpn_revoke_title'),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
             ]),
-          )),
-          if (_crl.isNotEmpty) Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text('${_crl.length} certificat(s) révoqué(s)', style: const TextStyle(color: Colors.white38, fontSize: 12)),
-          ),
-        ]))),
+            const SizedBox(height: 4),
+            Text(l.t('vpn_revoke_subtitle'),
+              style: const TextStyle(color: Colors.white38, fontSize: 12)),
+            const SizedBox(height: 16),
+            TextField(controller: _revokeEmailCtrl,
+              decoration: _fieldDeco(l.t('vpn_user_email'), isDark, Icons.person)),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(child: ElevatedButton.icon(
+                onPressed: _isRevoking ? null : () => _revokeByEmail(l),
+                icon: _isRevoking
+                    ? const SizedBox(width: 14, height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.gpp_bad, size: 16),
+                label: Text(_isRevoking ? l.t('vpn_revoking') : l.t('vpn_revoke_btn')),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+              )),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: _isRevokingSelf ? null : () => _revokeSelf(l),
+                icon: const Icon(Icons.person_off, size: 16),
+                label: Text(l.t('vpn_revoke_self')),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange),
+              ),
+            ]),
+          ],
+        ))),
+        const SizedBox(width: 16),
+        // CRL
+        Expanded(child: _glassCard(isDark: isDark, child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Row(children: [
+                const Icon(Icons.list_alt, color: Colors.amber, size: 18),
+                const SizedBox(width: 8),
+                Text(l.t('vpn_crl_title'),
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+              ]),
+              IconButton(
+                icon: _crlLoading
+                    ? const SizedBox(width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh, color: Colors.white54),
+                onPressed: _crlLoading ? null : () => _loadCrl(l),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            if (_crl.isEmpty)
+              Text(l.t('vpn_crl_hint'),
+                style: const TextStyle(color: Colors.white38, fontSize: 13)),
+            ..._crl.map((serial) => Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.red.withOpacity(0.3)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.cancel, color: Colors.redAccent, size: 14),
+                const SizedBox(width: 8),
+                Expanded(child: Text(serial,
+                  style: const TextStyle(color: Colors.redAccent, fontFamily: 'monospace', fontSize: 12))),
+              ]),
+            )),
+            if (_crl.isNotEmpty) Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                l.t('vpn_crl_count').replaceFirst('{count}', _crl.length.toString()),
+                style: const TextStyle(color: Colors.white38, fontSize: 12)),
+            ),
+          ],
+        ))),
       ]),
       const SizedBox(height: 16),
-      _glassCard(isDark: isDark, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Row(children: [
-          Icon(Icons.info_outline, color: Colors.blue, size: 18),
-          SizedBox(width: 8),
-          Text('Architecture de sécurité', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-        ]),
-        const SizedBox(height: 16),
-        _infoRow(Icons.lock, 'Chiffrement', 'RSA-OAEP 2048 bits + AES-256-GCM'),
-        _infoRow(Icons.draw, 'Signature', 'RSA avec SHA-256'),
-        _infoRow(Icons.verified_user, 'Certificats', 'X.509 émis par CA interne'),
-        _infoRow(Icons.block, 'Révocation', 'CRL (Certificate Revocation List)'),
-        _infoRow(Icons.storage, 'Transport', 'Canal Firebase chiffré de bout en bout'),
-      ])),
+      // Architecture info
+      _glassCard(isDark: isDark, child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.info_outline, color: Colors.blue, size: 18),
+            const SizedBox(width: 8),
+            Text(l.t('vpn_arch_title'),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+          ]),
+          const SizedBox(height: 16),
+          _infoRow(Icons.lock,         l.t('vpn_arch_encrypt'),    l.t('vpn_arch_encrypt_val')),
+          _infoRow(Icons.draw,         l.t('vpn_arch_sign'),       l.t('vpn_arch_sign_val')),
+          _infoRow(Icons.verified_user,l.t('vpn_arch_certs'),      l.t('vpn_arch_certs_val')),
+          _infoRow(Icons.block,        l.t('vpn_arch_revoke'),     l.t('vpn_arch_revoke_val')),
+          _infoRow(Icons.storage,      l.t('vpn_arch_transport'),  l.t('vpn_arch_transport_val')),
+        ],
+      )),
     ]),
   );
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
 
   Widget _glassCard({required Widget child, required bool isDark}) => Container(
     width: double.infinity,
@@ -546,23 +424,13 @@ class _VpnDesktopState extends State<VpnDesktop> with SingleTickerProviderStateM
     focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.blue)),
   );
 
-  Widget _certInfoRow(String label, String value) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    SizedBox(width: 80, child: Text('$label :', style: const TextStyle(color: Colors.white54, fontSize: 13))),
-    Expanded(child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 13))),
-  ]);
-
-  Widget _securityBadge(IconData icon, String label, bool ok) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-    decoration: BoxDecoration(
-      color: (ok ? Colors.green : Colors.red).withOpacity(0.15),
-      borderRadius: BorderRadius.circular(8),
-      border: Border.all(color: (ok ? Colors.green : Colors.red).withOpacity(0.4)),
-    ),
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: 13, color: ok ? Colors.green : Colors.red),
-      const SizedBox(width: 4),
-      Text(label, style: TextStyle(color: ok ? Colors.green : Colors.red, fontSize: 12, fontWeight: FontWeight.bold)),
-    ]),
+  Widget _certInfoRow(String label, String value) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      SizedBox(width: 100,
+        child: Text('$label :', style: const TextStyle(color: Colors.white54, fontSize: 13))),
+      Expanded(child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 13))),
+    ],
   );
 
   Widget _infoRow(IconData icon, String label, String value) => Padding(
@@ -570,7 +438,8 @@ class _VpnDesktopState extends State<VpnDesktop> with SingleTickerProviderStateM
     child: Row(children: [
       Icon(icon, color: Colors.white38, size: 16),
       const SizedBox(width: 10),
-      SizedBox(width: 100, child: Text(label, style: const TextStyle(color: Colors.white54, fontSize: 13))),
+      SizedBox(width: 120,
+        child: Text(label, style: const TextStyle(color: Colors.white54, fontSize: 13))),
       Expanded(child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 13))),
     ]),
   );

@@ -1,156 +1,305 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../core/database/database_service.dart';
 
+// ─── Exception personnalisée ──────────────────────────────────────────────────
+class AuthException implements Exception {
+  final String code;
+  final String message;
+  const AuthException({required this.code, required this.message});
+  @override
+  String toString() => 'AuthException[$code]: $message';
+}
+
+// ─── Modèle local ─────────────────────────────────────────────────────────────
+class LocalUser {
+  final String id;
+  final String email;
+  final String username;
+  final String displayName;
+  final String firstName;
+  final String lastName;
+  /// Photo de profil stockée en base64 dans Hive (accessible à tous les utilisateurs)
+  final String? photoBase64;
+
+  const LocalUser({
+    required this.id,
+    required this.email,
+    required this.username,
+    required this.displayName,
+    required this.firstName,
+    required this.lastName,
+    this.photoBase64,
+  });
+
+  factory LocalUser.fromMap(Map map) => LocalUser(
+    id:           map['id']          as String,
+    email:        map['email']       as String,
+    username:     map['username']    as String? ?? map['email'] as String,
+    displayName:  map['displayName'] as String,
+    firstName:    map['firstName']   as String? ?? '',
+    lastName:     map['lastName']    as String? ?? '',
+    photoBase64:  map['photoBase64'] as String?,
+  );
+}
+
+const _kCurrentUserId = 'current_user_id';
+
+// ─── AuthService ──────────────────────────────────────────────────────────────
 class AuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  final _db = DatabaseService.instance;
 
-  User? get currentUser => _auth.currentUser;
+  String _hashPassword(String password) =>
+      sha256.convert(utf8.encode(password)).toString();
 
-  Stream<User?> get authStateChanges => _auth.authStateChanges();
-
-  Future<void> _saveUserToFirestore(User user) async {
-    await _firestore.collection('users').doc(user.uid).set({
-      'uid': user.uid,
-      'email': user.email ?? '',
-      'displayName': user.displayName ?? user.email ?? 'Utilisateur',
-      'createdAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+  String _generateId() {
+    final t = DateTime.now().millisecondsSinceEpoch;
+    return '${t}_${(t * 9301 + 49297) % 233280}';
   }
 
-  Future<UserCredential> signUp({
+  // ── currentUser ───────────────────────────────────────────────────────────
+  Future<LocalUser?> get currentUser async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString(_kCurrentUserId);
+    if (userId == null) return null;
+    final userData = _db.users.get(userId);
+    if (userData == null) { await _clearSession(); return null; }
+    return LocalUser.fromMap(userData);
+  }
+
+  // ── Validation mot de passe ───────────────────────────────────────────────
+  void _validatePassword(String password) {
+    if (password.length < 8) {
+      throw const AuthException(code: 'weak-password', message: 'Le mot de passe doit contenir au moins 8 caractères.');
+    }
+    if (!password.contains(RegExp(r'[A-Z]'))) {
+      throw const AuthException(code: 'weak-password', message: 'Le mot de passe doit contenir au moins une majuscule.');
+    }
+    if (!password.contains(RegExp(r'[a-z]'))) {
+      throw const AuthException(code: 'weak-password', message: 'Le mot de passe doit contenir au moins une minuscule.');
+    }
+    if (!password.contains(RegExp(r'[0-9]'))) {
+      throw const AuthException(code: 'weak-password', message: 'Le mot de passe doit contenir au moins un chiffre.');
+    }
+    if (!password.contains(RegExp(r'[!@#$%^&*()\-_=+\[\]{};:,.<>?/\\|~]'))) {
+      throw const AuthException(code: 'weak-password', message: 'Le mot de passe doit contenir au moins un caractère spécial.');
+    }
+  }
+
+  // ── signUp ────────────────────────────────────────────────────────────────
+  Future<LocalUser> signUp({
     required String email,
     required String password,
+    required String username,
+    required String firstName,
+    required String lastName,
+    String? displayName,
   }) async {
-    final credential = await _auth.createUserWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
+    final normalizedEmail    = email.trim().toLowerCase();
+    final normalizedUsername = username.trim().toLowerCase();
 
-    if (credential.user != null) {
-      await _saveUserToFirestore(credential.user!);
+    if (normalizedUsername.isEmpty) {
+      throw const AuthException(
+        code: 'invalid-username',
+        message: 'Le nom d\'utilisateur ne peut pas être vide.',
+      );
     }
 
-    return credential;
+    // Vérifier que le username ne contient que des caractères valides
+    final usernameRegex = RegExp(r'^[a-zA-Z0-9_\.]+$');
+    if (!usernameRegex.hasMatch(normalizedUsername)) {
+      throw const AuthException(
+        code: 'invalid-username',
+        message: 'Le nom d\'utilisateur ne peut contenir que des lettres, chiffres, _ et .',
+      );
+    }
+
+    // Unicité email
+    final emailExists = _db.users.values.any(
+      (u) => u['email'] == normalizedEmail,
+    );
+    if (emailExists) {
+      throw const AuthException(
+        code: 'email-already-in-use',
+        message: 'Un compte existe déjà avec cet email.',
+      );
+    }
+
+    // Unicité username
+    final usernameExists = _db.users.values.any(
+      (u) => (u['username'] as String?)?.toLowerCase() == normalizedUsername,
+    );
+    if (usernameExists) {
+      throw const AuthException(
+        code: 'username-already-in-use',
+        message: 'Ce nom d\'utilisateur est déjà pris.',
+      );
+    }
+
+    _validatePassword(password);
+
+    final userId = _generateId();
+    final name = displayName ?? '$firstName $lastName'.trim();
+
+    await _db.users.put(userId, {
+      'id': userId,
+      'email': normalizedEmail,
+      'username': normalizedUsername,
+      'firstName': firstName.trim(),
+      'lastName': lastName.trim(),
+      'passwordHash': _hashPassword(password),
+      'displayName': name,
+      'createdAt': DateTime.now().toIso8601String(),
+    });
+
+    await _saveSession(userId);
+    return LocalUser(
+      id: userId,
+      email: normalizedEmail,
+      username: normalizedUsername,
+      displayName: name,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+    );
   }
 
-  Future<UserCredential> signIn({
-    required String email,
+  // ── signIn — accepte email OU username ────────────────────────────────────
+  Future<LocalUser> signIn({
+    required String identifier, // email ou username
     required String password,
   }) async {
-    final credential = await _auth.signInWithEmailAndPassword(
-      email: email,
-      password: password,
+    final normalized = identifier.trim().toLowerCase();
+
+    // Chercher par email d'abord, puis par username
+    Map userData = _db.users.values.firstWhere(
+      (u) => u['email'] == normalized,
+      orElse: () => {},
     );
 
-    if (credential.user != null) {
-      await _saveUserToFirestore(credential.user!);
+    if (userData.isEmpty) {
+      userData = _db.users.values.firstWhere(
+        (u) => (u['username'] as String?)?.toLowerCase() == normalized,
+        orElse: () => {},
+      );
     }
 
-    return credential;
+    if (userData.isEmpty) {
+      throw const AuthException(
+        code: 'user-not-found',
+        message: 'Aucun compte trouvé avec cet email ou nom d\'utilisateur.',
+      );
+    }
+
+    if (userData['passwordHash'] != _hashPassword(password)) {
+      throw const AuthException(
+        code: 'wrong-password',
+        message: 'Mot de passe incorrect.',
+      );
+    }
+
+    final user = LocalUser.fromMap(userData);
+    await _saveSession(user.id);
+    return user;
   }
 
-  Future<UserCredential?> signInWithGoogle() async {
-    try {
-      UserCredential? credential;
-
-      if (kIsWeb) {
-        credential = await _auth.signInWithPopup(GoogleAuthProvider());
-      } else {
-        credential = await _auth.signInWithProvider(GoogleAuthProvider());
-      }
-
-      if (credential.user != null) {
-        await _saveUserToFirestore(credential.user!);
-      }
-
-      return credential;
-    } catch (e) {
-      print('Erreur Google: $e');
-      rethrow;
+  // ── updateUsername ────────────────────────────────────────────────────────
+  Future<LocalUser> updateUsername({
+    required String userId,
+    required String newUsername,
+  }) async {
+    final normalized = newUsername.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      throw const AuthException(code: 'invalid-username', message: 'Le nom d\'utilisateur ne peut pas être vide.');
     }
+    final usernameRegex = RegExp(r'^[a-zA-Z0-9_\.]+$');
+    if (!usernameRegex.hasMatch(normalized)) {
+      throw const AuthException(
+        code: 'invalid-username',
+        message: 'Le nom d\'utilisateur ne peut contenir que des lettres, chiffres, _ et .',
+      );
+    }
+    final usernameExists = _db.users.values.any(
+      (u) => (u['username'] as String?)?.toLowerCase() == normalized && u['id'] != userId,
+    );
+    if (usernameExists) {
+      throw const AuthException(code: 'username-already-in-use', message: 'Ce nom d\'utilisateur est déjà pris.');
+    }
+    final userData = _db.users.get(userId);
+    if (userData == null) throw const AuthException(code: 'user-not-found', message: 'Utilisateur introuvable.');
+    final updated = Map<dynamic, dynamic>.from(userData);
+    updated['username'] = normalized;
+    await _db.users.put(userId, updated);
+    return LocalUser.fromMap(updated);
   }
 
-  Future<UserCredential?> signInWithFacebook() async {
-    try {
-      UserCredential? credential;
-
-      if (kIsWeb) {
-        credential = await _auth.signInWithPopup(FacebookAuthProvider());
-      } else {
-        final result = await FacebookAuth.instance.login();
-
-        if (result.status == LoginStatus.success) {
-          final authCredential = FacebookAuthProvider.credential(
-            result.accessToken!.token,
-          );
-          credential = await _auth.signInWithCredential(authCredential);
-        } else {
-          credential = await _auth.signInWithProvider(FacebookAuthProvider());
-        }
-      }
-
-      if (credential?.user != null) {
-        await _saveUserToFirestore(credential!.user!);
-      }
-
-      return credential;
-    } catch (e) {
-      print('Erreur Facebook: $e');
-
-      try {
-        final credential = await _auth.signInWithProvider(
-          FacebookAuthProvider(),
-        );
-
-        if (credential.user != null) {
-          await _saveUserToFirestore(credential.user!);
-        }
-
-        return credential;
-      } catch (_) {
-        rethrow;
-      }
+  // ── updatePassword ────────────────────────────────────────────────────────
+  Future<void> updatePassword({
+    required String userId,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final userData = _db.users.get(userId);
+    if (userData == null) throw const AuthException(code: 'user-not-found', message: 'Utilisateur introuvable.');
+    if (userData['passwordHash'] != _hashPassword(currentPassword)) {
+      throw const AuthException(code: 'wrong-password', message: 'Mot de passe actuel incorrect.');
     }
+    _validatePassword(newPassword);
+    final updated = Map<dynamic, dynamic>.from(userData);
+    updated['passwordHash'] = _hashPassword(newPassword);
+    await _db.users.put(userId, updated);
   }
 
-  Future<UserCredential?> signInWithGitHub() async {
-    try {
-      final githubProvider = GithubAuthProvider();
-
-      final credential = kIsWeb
-          ? await _auth.signInWithPopup(githubProvider)
-          : await _auth.signInWithProvider(githubProvider);
-
-      if (credential.user != null) {
-        await _saveUserToFirestore(credential.user!);
-      }
-
-      return credential;
-    } catch (e) {
-      print('Erreur GitHub: $e');
-      rethrow;
-    }
+  // ── updateProfile ─────────────────────────────────────────────────────────
+  Future<LocalUser> updateProfile({
+    required String userId,
+    String? firstName,
+    String? lastName,
+  }) async {
+    final userData = _db.users.get(userId);
+    if (userData == null) throw const AuthException(code: 'user-not-found', message: 'Utilisateur introuvable.');
+    final updated = Map<dynamic, dynamic>.from(userData);
+    if (firstName != null) updated['firstName'] = firstName.trim();
+    if (lastName != null) updated['lastName'] = lastName.trim();
+    updated['displayName'] = '${updated['firstName']} ${updated['lastName']}'.trim();
+    await _db.users.put(userId, updated);
+    return LocalUser.fromMap(updated);
   }
 
-  Future<void> signOut() async {
-    try {
-      if (!kIsWeb) {
-        try {
-          await _googleSignIn.signOut();
-        } catch (_) {}
-        try {
-          await FacebookAuth.instance.logOut();
-        } catch (_) {}
-      }
-
-      await _auth.signOut();
-    } catch (e) {
-      print('Erreur SignOut: $e');
+  // ── updatePhoto ───────────────────────────────────────────────────────────
+  /// Sauvegarde la photo de profil en base64 dans Hive.
+  /// Les autres utilisateurs peuvent la lire via [getUserPhotoBase64].
+  Future<LocalUser> updatePhoto({
+    required String userId,
+    required String? base64Image, // null = supprimer
+  }) async {
+    final userData = _db.users.get(userId);
+    if (userData == null) throw const AuthException(code: 'user-not-found', message: 'Utilisateur introuvable.');
+    final updated = Map<dynamic, dynamic>.from(userData);
+    if (base64Image == null) {
+      updated.remove('photoBase64');
+    } else {
+      updated['photoBase64'] = base64Image;
     }
+    await _db.users.put(userId, updated);
+    return LocalUser.fromMap(updated);
+  }
+
+  /// Retourne la photo (base64) d'un utilisateur par son ID.
+  String? getUserPhotoBase64(String userId) {
+    return _db.users.get(userId)?['photoBase64'] as String?;
+  }
+
+  // ── signOut ───────────────────────────────────────────────────────────────
+  Future<void> signOut() async => _clearSession();
+
+  Future<void> _saveSession(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kCurrentUserId, userId);
+  }
+
+  Future<void> _clearSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kCurrentUserId);
   }
 }

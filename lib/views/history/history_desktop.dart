@@ -1,6 +1,7 @@
 import 'package:cryptoadv/widgets/common/app_navbar.dart';
 import 'package:flutter/material.dart';
 import '../../components/backround.dart';
+import '../../core/localization/app_l10n.dart';
 
 class HistoryDesktop extends StatelessWidget {
   const HistoryDesktop({super.key});
@@ -8,6 +9,7 @@ class HistoryDesktop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final l = AppL10n.of(context);
 
     return Scaffold(
       body: Stack(
@@ -27,13 +29,13 @@ class HistoryDesktop extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text("Historique sécurisé", style: TextStyle(color: isDark ? Colors.white : const Color(0xFF0F172A), fontSize: 28, fontWeight: FontWeight.w700)),
+                              Text(l.t('history_title'), style: TextStyle(color: isDark ? Colors.white : const Color(0xFF0F172A), fontSize: 28, fontWeight: FontWeight.w700)),
                               const SizedBox(height: 8),
-                              Text("Résultats sauvegardés après hachage, chiffrement ou génération.", style: TextStyle(color: (isDark ? Colors.white : const Color(0xFF334155)).withOpacity(0.72), fontSize: 15)),
+                              Text(l.t('history_subtitle'), style: TextStyle(color: (isDark ? Colors.white : const Color(0xFF334155)).withOpacity(0.72), fontSize: 15)),
                               const SizedBox(height: 24),
-                              _historyItem(icon: Icons.fingerprint, title: "Hachage SHA-256", subtitle: "Message traité récemment", value: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824", isDark: isDark),
-                              _historyItem(icon: Icons.lock_outline, title: "Chiffrement César", subtitle: "Texte chiffré avec décalage 3", value: "KHOOR ZRUOG", isDark: isDark),
-                              _historyItem(icon: Icons.password, title: "Mot de passe généré", subtitle: "Mot de passe sauvegardé", value: "A7!kP9@Lm2#Q", isDark: isDark),
+                              _historyItem(icon: Icons.fingerprint, title: l.t('history_hachage'), subtitle: l.t('history_hachage_sub'), value: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824", isDark: isDark),
+                              _historyItem(icon: Icons.lock_outline, title: l.t('history_cipher'), subtitle: l.t('history_cipher_sub'), value: "KHOOR ZRUOG", isDark: isDark),
+                              _historyItem(icon: Icons.password, title: l.t('history_mdp'), subtitle: l.t('history_mdp_sub'), value: "A7!kP9@Lm2#Q", isDark: isDark),
                             ],
                           ),
                         ),
@@ -43,12 +45,12 @@ class HistoryDesktop extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text("À venir", style: TextStyle(color: isDark ? Colors.white : const Color(0xFF1E293B), fontSize: 20, fontWeight: FontWeight.w700)),
+                              Text(l.t('history_coming_soon'), style: TextStyle(color: isDark ? Colors.white : const Color(0xFF1E293B), fontSize: 20, fontWeight: FontWeight.w700)),
                               const SizedBox(height: 16),
-                              _bullet("Historique lié à chaque utilisateur", isDark),
-                              _bullet("Sauvegarde dans Firebase", isDark),
-                              _bullet("Chiffrement ou hachage avant stockage", isDark),
-                              _bullet("Filtres par type d’opération", isDark),
+                              _bullet(l.t('history_b1'), isDark),
+                              _bullet(l.t('history_b2'), isDark),
+                              _bullet(l.t('history_b3'), isDark),
+                              _bullet(l.t('history_b4'), isDark),
                             ],
                           ),
                         ),

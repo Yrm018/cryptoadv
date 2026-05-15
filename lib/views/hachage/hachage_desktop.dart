@@ -1,11 +1,12 @@
 import 'package:cryptoadv/widgets/common/app_navbar.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/history_service.dart';
+import '../../services/auth_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../components/backround.dart';
 import 'package:cryptoadv/backend/crypto/hachage.dart';
 import 'package:file_picker/file_picker.dart';
+import '../../core/localization/app_l10n.dart';
 
 class HachageDesktop extends StatefulWidget {
   const HachageDesktop({super.key});
@@ -20,18 +21,18 @@ class _HachageDesktopState extends State<HachageDesktop> {
 
   String selectedAlgo = "sha256";
   String fileHashResult = "";
-  String fileName = "Aucun fichier sélectionné";
+  String fileName = "";
   final HistoryService _historyService = HistoryService();
 
   Future<void> _saveHistory({
     required String inputPreview,
     required String result,
   }) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = await AuthService().currentUser;
     if (user == null) return;
 
     await _historyService.addHistoryItem(
-      userId: user.uid,
+      userId: user.id,
       type: 'hash',
       algorithm: selectedAlgo.toUpperCase(),
       inputPreview: inputPreview.length > 80
@@ -42,7 +43,7 @@ class _HachageDesktopState extends State<HachageDesktop> {
     );
   }
 
-  Future<void> _pickAndHashFile() async {
+  Future<void> _pickAndHashFile(AppL10n l) async {
     final result = await FilePicker.platform.pickFiles(
       withData: true,
     );
@@ -56,7 +57,7 @@ class _HachageDesktopState extends State<HachageDesktop> {
 
     if (bytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Impossible de lire le fichier.")),
+        SnackBar(content: Text(l.t('err_read_file'))),
       );
       return;
     }
@@ -84,6 +85,8 @@ class _HachageDesktopState extends State<HachageDesktop> {
   @override
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final l = AppL10n.of(context);
+    if (fileName.isEmpty) fileName = l.t('no_file_selected');
 
     return Scaffold(
       body: Stack(
@@ -120,7 +123,7 @@ class _HachageDesktopState extends State<HachageDesktop> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  "Hachage",
+                                  l.t('hachage_title'),
                                   style: TextStyle(
                                     color: isDark ? Colors.white : const Color(0xFF0F172A),
                                     fontSize: 34,
@@ -129,7 +132,7 @@ class _HachageDesktopState extends State<HachageDesktop> {
                                 ),
                                 const SizedBox(height: 10),
                                 Text(
-                                  "Hash un message ou un fichier avec différents algorithmes.",
+                                  l.t('hachage_subtitle'),
                                   style: TextStyle(
                                     color: isDark ? Colors.white70 : const Color(0xFF334155),
                                     fontSize: 16,
@@ -142,33 +145,33 @@ class _HachageDesktopState extends State<HachageDesktop> {
                                     Expanded(
                                       child: _hashCard(
                                         isDark: isDark,
-                                        title: "Hacher un message",
+                                        title: l.t('hash_message_title'),
                                         icon: Icons.text_fields,
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            _label("Message", isDark),
+                                            _label(l.t('message_label'), isDark),
                                             const SizedBox(height: 10),
                                             TextField(
                                               controller: messageController,
                                               maxLines: 5,
                                               style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-                                              decoration: _inputDeco("Entrez votre message...", isDark),
+                                              decoration: _inputDeco(l.t('message_hint'), isDark),
                                             ),
                                             const SizedBox(height: 20),
-                                            _label("Algorithme", isDark),
+                                            _label(l.t('algo_label'), isDark),
                                             const SizedBox(height: 10),
                                             _algoDropdown(isDark),
                                             const SizedBox(height: 20),
-                                            _actionButton("Hacher le message", isDark, () async {
+                                            _actionButton(l.t('hash_message_btn'), isDark, () async {
                                               final result = hashMessage(messageController.text, algorithm: selectedAlgo);
                                               setState(() => resultController.text = result);
                                               await _saveHistory(inputPreview: messageController.text, result: result);
                                             }),
                                             const SizedBox(height: 25),
-                                            _label("Résultat", isDark),
+                                            _label(l.t('result_label'), isDark),
                                             const SizedBox(height: 10),
-                                            _resultField(resultController, isDark),
+                                            _resultField(resultController, isDark, l),
                                           ],
                                         ),
                                       ),
@@ -177,7 +180,7 @@ class _HachageDesktopState extends State<HachageDesktop> {
                                     Expanded(
                                       child: _hashCard(
                                         isDark: isDark,
-                                        title: "Hacher un fichier",
+                                        title: l.t('hash_file_title'),
                                         icon: Icons.insert_drive_file_outlined,
                                         color: (isDark ? const Color(0xFF0047AB) : const Color(0xFFEFF6FF)).withOpacity(0.35),
                                         child: Column(
@@ -194,9 +197,9 @@ class _HachageDesktopState extends State<HachageDesktop> {
                                               child: Text(fileName, style: TextStyle(color: isDark ? Colors.white70 : Colors.black87, fontSize: 16)),
                                             ),
                                             const SizedBox(height: 20),
-                                            _actionButton("Choisir un fichier", isDark, _pickAndHashFile),
+                                            _actionButton(l.t('choose_file_btn'), isDark, () => _pickAndHashFile(l)),
                                             const SizedBox(height: 25),
-                                            _label("Hash du fichier", isDark),
+                                            _label(l.t('file_hash_label'), isDark),
                                             const SizedBox(height: 10),
                                             Container(
                                               width: double.infinity,
@@ -208,16 +211,13 @@ class _HachageDesktopState extends State<HachageDesktop> {
                                                 border: Border.all(color: (isDark ? Colors.white12 : Colors.black12)),
                                               ),
                                               child: Text(
-                                                fileHashResult.isEmpty ? "Le hash du fichier apparaîtra ici..." : fileHashResult,
+                                                fileHashResult.isEmpty ? l.t('file_hash_hint') : fileHashResult,
                                                 style: TextStyle(
                                                   color: fileHashResult.isEmpty ? (isDark ? Colors.white54 : Colors.black45) : (isDark ? Colors.white : Colors.black87),
                                                   fontSize: 16,
                                                 ),
                                               ),
                                             ),
-                                            const SizedBox(height: 20),
-                                            Text("Vous pourrez brancher ici votre fonction de hachage fichier plus tard.",
-                                                style: TextStyle(color: isDark ? Colors.white60 : Colors.black54, fontSize: 15)),
                                           ],
                                         ),
                                       ),
@@ -319,19 +319,19 @@ class _HachageDesktopState extends State<HachageDesktop> {
     );
   }
 
-  Widget _resultField(TextEditingController ctrl, bool isDark) {
+  Widget _resultField(TextEditingController ctrl, bool isDark, AppL10n l) {
     return TextField(
       controller: ctrl,
       readOnly: true,
       maxLines: 4,
       style: TextStyle(color: isDark ? Colors.white : Colors.black87),
-      decoration: _inputDeco("Le hash apparaîtra ici...", isDark).copyWith(
+      decoration: _inputDeco(l.t('result_hint'), isDark).copyWith(
         suffixIcon: IconButton(
           icon: Icon(Icons.copy, color: isDark ? const Color(0xFF00D4FF) : const Color(0xFF2563EB)),
           onPressed: () {
             if (ctrl.text.isEmpty) return;
             Clipboard.setData(ClipboardData(text: ctrl.text));
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Hash copié !"), duration: Duration(seconds: 2)));
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l.t('hash_copied')), duration: const Duration(seconds: 2)));
           },
         ),
       ),
