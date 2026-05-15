@@ -4,6 +4,7 @@ const http      = require('http');
 const WebSocket = require('ws');
 const cors      = require('cors');
 const jwt       = require('jsonwebtoken');
+const path      = require('path');
 
 const authRoutes     = require('./routes/auth');
 const usersRoutes    = require('./routes/users');
@@ -15,12 +16,22 @@ const JWT_SECRET = process.env.JWT_SECRET || 'cryptoadv_secret_change_me';
 // ── Express ───────────────────────────────────────────────────────────────────
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));  // fichiers base64
+app.use(express.json({ limit: '50mb' }));
 
+// ── API Routes ────────────────────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', ts: new Date() }));
 app.use('/auth',     authRoutes);
 app.use('/users',    usersRoutes);
 app.use('/messages', messagesRoutes);
+
+// ── Servir le Frontend Flutter Web ────────────────────────────────────────────
+// On sert les fichiers statiques du dossier "public" (build/web)
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Pour toutes les autres routes, on renvoie l'index.html (gestion du routing Flutter SPA)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // ── HTTP server ───────────────────────────────────────────────────────────────
 const server = http.createServer(app);
@@ -48,7 +59,6 @@ wss.on('connection', (ws, req) => {
     try { msg = JSON.parse(raw); } catch { return; }
 
     switch (msg.type) {
-
       // ── Auth ────────────────────────────────────────────────────────────────
       case 'auth': {
         try {
@@ -68,7 +78,6 @@ wss.on('connection', (ws, req) => {
       case 'message': {
         if (!userId) return;
         const { receiverId, ...payload } = msg;
-        // Envoyer au destinataire s'il est connecté
         sendTo(receiverId, { type: 'message', ...payload, senderId: userId });
         break;
       }
@@ -105,6 +114,6 @@ wss.on('connection', (ws, req) => {
 // ── Start ─────────────────────────────────────────────────────────────────────
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`CryptoAdv server running on port ${PORT}`);
-  console.log(`  REST  → http://0.0.0.0:${PORT}`);
-  console.log(`  WS    → ws://0.0.0.0:${PORT}/ws`);
+  console.log(`  Web & REST  → http://0.0.0.0:${PORT}`);
+  console.log(`  WS          → ws://0.0.0.0:${PORT}/ws`);
 });
