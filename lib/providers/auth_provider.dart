@@ -43,11 +43,10 @@ class AuthProvider extends ChangeNotifier {
   // ── Connexion ─────────────────────────────────────────────────────────────
 
   Future<void> signIn({
-    required String email,
+    required String identifier,
     required String password,
   }) async {
-    // AuthException est propagée — la vue la catch et affiche le message
-    _currentUser = await _authService.signIn(email: email, password: password);
+    _currentUser = await _authService.signIn(identifier: identifier, password: password);
     notifyListeners();
   }
 
@@ -56,12 +55,55 @@ class AuthProvider extends ChangeNotifier {
   Future<void> signUp({
     required String email,
     required String password,
+    required String username,
+    required String firstName,
+    required String lastName,
     String? displayName,
   }) async {
     _currentUser = await _authService.signUp(
       email: email,
       password: password,
+      username: username,
+      firstName: firstName,
+      lastName: lastName,
       displayName: displayName,
+    );
+    notifyListeners();
+  }
+
+  // ── Mise à jour du nom d'utilisateur ─────────────────────────────────────
+
+  Future<void> updateUsername(String newUsername) async {
+    final userId = _currentUser?.id;
+    if (userId == null) return;
+    _currentUser = await _authService.updateUsername(userId: userId, newUsername: newUsername);
+    notifyListeners();
+  }
+
+  // ── Mise à jour du mot de passe ───────────────────────────────────────────
+
+  Future<void> updatePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final userId = _currentUser?.id;
+    if (userId == null) return;
+    await _authService.updatePassword(
+      userId: userId,
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+  }
+
+  // ── Mise à jour du profil (prénom / nom) ──────────────────────────────────
+
+  Future<void> updateProfile({String? firstName, String? lastName}) async {
+    final userId = _currentUser?.id;
+    if (userId == null) return;
+    _currentUser = await _authService.updateProfile(
+      userId: userId,
+      firstName: firstName,
+      lastName: lastName,
     );
     notifyListeners();
   }

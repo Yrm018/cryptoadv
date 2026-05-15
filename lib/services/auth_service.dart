@@ -16,13 +16,27 @@ class AuthException implements Exception {
 class LocalUser {
   final String id;
   final String email;
+  final String username;
   final String displayName;
-  const LocalUser({required this.id, required this.email, required this.displayName});
+  final String firstName;
+  final String lastName;
+
+  const LocalUser({
+    required this.id,
+    required this.email,
+    required this.username,
+    required this.displayName,
+    required this.firstName,
+    required this.lastName,
+  });
 
   factory LocalUser.fromMap(Map map) => LocalUser(
     id: map['id'] as String,
     email: map['email'] as String,
+    username: map['username'] as String? ?? map['email'] as String,
     displayName: map['displayName'] as String,
+    firstName: map['firstName'] as String? ?? '',
+    lastName: map['lastName'] as String? ?? '',
   );
 }
 
@@ -32,50 +46,75 @@ const _kCurrentUserId = 'current_user_id';
 class AuthService {
   final _db = DatabaseService.instance;
 
-  // ── Hachage SHA-256 ───────────────────────────────────────────────────────
   String _hashPassword(String password) =>
       sha256.convert(utf8.encode(password)).toString();
 
-  // ── ID unique ─────────────────────────────────────────────────────────────
   String _generateId() {
     final t = DateTime.now().millisecondsSinceEpoch;
     return '${t}_${(t * 9301 + 49297) % 233280}';
   }
 
   // ── currentUser ───────────────────────────────────────────────────────────
-  //
-  // Hive : box.get(key) → retourne la Map stockée à cette clé
-  //   Si la clé n'existe pas → retourne null
-  //
   Future<LocalUser?> get currentUser async {
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString(_kCurrentUserId);
     if (userId == null) return null;
-
-    // Hive : chaque user est stocké à la clé = son id
-    // users.get(userId) → Map{'id':…, 'email':…, …} ou null
     final userData = _db.users.get(userId);
-    if (userData == null) {
-      await _clearSession();
-      return null;
-    }
+    if (userData == null) { await _clearSession(); return null; }
     return LocalUser.fromMap(userData);
+  }
+
+  // ── Validation mot de passe ───────────────────────────────────────────────
+  void _validatePassword(String password) {
+    if (password.length < 8) {
+      throw const AuthException(code: 'weak-password', message: 'Le mot de passe doit contenir au moins 8 caractères.');
+    }
+    if (!password.contains(RegExp(r'[A-Z]'))) {
+      throw const AuthException(code: 'weak-password', message: 'Le mot de passe doit contenir au moins une majuscule.');
+    }
+    if (!password.contains(RegExp(r'[a-z]'))) {
+      throw const AuthException(code: 'weak-password', message: 'Le mot de passe doit contenir au moins une minuscule.');
+    }
+    if (!password.contains(RegExp(r'[0-9]'))) {
+      throw const AuthException(code: 'weak-password', message: 'Le mot de passe doit contenir au moins un chiffre.');
+    }
+    if (!password.contains(RegExp(r'[!@#$%^&*()\-_=+\[\]{};:,.<>?/\\|~]'))) {
+      throw const AuthException(code: 'weak-password', message: 'Le mot de passe doit contenir au moins un caractère spécial.');
+    }
   }
 
   // ── signUp ────────────────────────────────────────────────────────────────
   Future<LocalUser> signUp({
     required String email,
     required String password,
+    required String username,
+    required String firstName,
+    required String lastName,
     String? displayName,
   }) async {
-    final normalizedEmail = email.trim().toLowerCase();
+    final normalizedEmail    = email.trim().toLowerCase();
+    final normalizedUsername = username.trim().toLowerCase();
 
-    // Hive n'a pas de WHERE — on parcourt toutes les valeurs
-    // .values → Iterable de toutes les Maps stockées dans le box
+    if (normalizedUsername.isEmpty) {
+      throw const AuthException(
+        code: 'invalid-username',
+        message: 'Le nom d\'utilisateur ne peut pas être vide.',
+      );
+    }
+
+    // Vérifier que le username ne contient que des caractères valides
+    final usernameRegex = RegExp(r'^[a-zA-Z0-9_\.]+$');
+    if (!usernameRegex.hasMatch(normalizedUsername)) {
+      throw const AuthException(
+        code: 'invalid-username',
+        message: 'Le nom d\'utilisateur ne peut contenir que des lettres, chiffres, _ et .',
+      );
+    }
+
+    // Unicité email
     final emailExists = _db.users.values.any(
       (u) => u['email'] == normalizedEmail,
     );
-
     if (emailExists) {
       throw const AuthException(
         code: 'email-already-in-use',
@@ -83,47 +122,68 @@ class AuthService {
       );
     }
 
-    if (password.length < 6) {
+    // Unicité username
+    final usernameExists = _db.users.values.any(
+      (u) => (u['username'] as String?)?.toLowerCase() == normalizedUsername,
+    );
+    if (usernameExists) {
       throw const AuthException(
-        code: 'weak-password',
-        message: 'Le mot de passe doit contenir au moins 6 caractères.',
+        code: 'username-already-in-use',
+        message: 'Ce nom d\'utilisateur est déjà pris.',
       );
     }
 
-    final userId = _generateId();
-    final name = displayName ?? normalizedEmail.split('@').first;
+    _validatePassword(password);
 
-    // Hive : box.put(key, value)
-    // On stocke chaque user avec son id comme clé
+    final userId = _generateId();
+    final name = displayName ?? '$firstName $lastName'.trim();
+
     await _db.users.put(userId, {
       'id': userId,
       'email': normalizedEmail,
+      'username': normalizedUsername,
+      'firstName': firstName.trim(),
+      'lastName': lastName.trim(),
       'passwordHash': _hashPassword(password),
       'displayName': name,
       'createdAt': DateTime.now().toIso8601String(),
     });
 
     await _saveSession(userId);
-    return LocalUser(id: userId, email: normalizedEmail, displayName: name);
+    return LocalUser(
+      id: userId,
+      email: normalizedEmail,
+      username: normalizedUsername,
+      displayName: name,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+    );
   }
 
-  // ── signIn ────────────────────────────────────────────────────────────────
+  // ── signIn — accepte email OU username ────────────────────────────────────
   Future<LocalUser> signIn({
-    required String email,
+    required String identifier, // email ou username
     required String password,
   }) async {
-    final normalizedEmail = email.trim().toLowerCase();
+    final normalized = identifier.trim().toLowerCase();
 
-    // Chercher le user par email dans toutes les valeurs du box
-    final userData = _db.users.values.firstWhere(
-      (u) => u['email'] == normalizedEmail,
+    // Chercher par email d'abord, puis par username
+    Map userData = _db.users.values.firstWhere(
+      (u) => u['email'] == normalized,
       orElse: () => {},
     );
 
     if (userData.isEmpty) {
+      userData = _db.users.values.firstWhere(
+        (u) => (u['username'] as String?)?.toLowerCase() == normalized,
+        orElse: () => {},
+      );
+    }
+
+    if (userData.isEmpty) {
       throw const AuthException(
         code: 'user-not-found',
-        message: 'Aucun compte trouvé avec cet email.',
+        message: 'Aucun compte trouvé avec cet email ou nom d\'utilisateur.',
       );
     }
 
@@ -137,6 +197,69 @@ class AuthService {
     final user = LocalUser.fromMap(userData);
     await _saveSession(user.id);
     return user;
+  }
+
+  // ── updateUsername ────────────────────────────────────────────────────────
+  Future<LocalUser> updateUsername({
+    required String userId,
+    required String newUsername,
+  }) async {
+    final normalized = newUsername.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      throw const AuthException(code: 'invalid-username', message: 'Le nom d\'utilisateur ne peut pas être vide.');
+    }
+    final usernameRegex = RegExp(r'^[a-zA-Z0-9_\.]+$');
+    if (!usernameRegex.hasMatch(normalized)) {
+      throw const AuthException(
+        code: 'invalid-username',
+        message: 'Le nom d\'utilisateur ne peut contenir que des lettres, chiffres, _ et .',
+      );
+    }
+    final usernameExists = _db.users.values.any(
+      (u) => (u['username'] as String?)?.toLowerCase() == normalized && u['id'] != userId,
+    );
+    if (usernameExists) {
+      throw const AuthException(code: 'username-already-in-use', message: 'Ce nom d\'utilisateur est déjà pris.');
+    }
+    final userData = _db.users.get(userId);
+    if (userData == null) throw const AuthException(code: 'user-not-found', message: 'Utilisateur introuvable.');
+    final updated = Map<dynamic, dynamic>.from(userData);
+    updated['username'] = normalized;
+    await _db.users.put(userId, updated);
+    return LocalUser.fromMap(updated);
+  }
+
+  // ── updatePassword ────────────────────────────────────────────────────────
+  Future<void> updatePassword({
+    required String userId,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final userData = _db.users.get(userId);
+    if (userData == null) throw const AuthException(code: 'user-not-found', message: 'Utilisateur introuvable.');
+    if (userData['passwordHash'] != _hashPassword(currentPassword)) {
+      throw const AuthException(code: 'wrong-password', message: 'Mot de passe actuel incorrect.');
+    }
+    _validatePassword(newPassword);
+    final updated = Map<dynamic, dynamic>.from(userData);
+    updated['passwordHash'] = _hashPassword(newPassword);
+    await _db.users.put(userId, updated);
+  }
+
+  // ── updateProfile ─────────────────────────────────────────────────────────
+  Future<LocalUser> updateProfile({
+    required String userId,
+    String? firstName,
+    String? lastName,
+  }) async {
+    final userData = _db.users.get(userId);
+    if (userData == null) throw const AuthException(code: 'user-not-found', message: 'Utilisateur introuvable.');
+    final updated = Map<dynamic, dynamic>.from(userData);
+    if (firstName != null) updated['firstName'] = firstName.trim();
+    if (lastName != null) updated['lastName'] = lastName.trim();
+    updated['displayName'] = '${updated['firstName']} ${updated['lastName']}'.trim();
+    await _db.users.put(userId, updated);
+    return LocalUser.fromMap(updated);
   }
 
   // ── signOut ───────────────────────────────────────────────────────────────

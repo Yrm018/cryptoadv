@@ -11,6 +11,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   # Base de données — hive fonctionne sur mobile, desktop ET web (IndexedDB)
   # Aucune génération de code requise, zéro dépendance native

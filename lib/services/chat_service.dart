@@ -32,13 +32,21 @@ class ChatService {
   String _algoLabel(String algorithm) =>
       algorithm == 'chacha20' ? 'ChaCha20-Poly1305' : 'AES-GCM';
 
-  // ── Chercher un user par email (dans hive) ────────────────────────────────
-  Map<String, dynamic>? getUserByEmail(String email) {
-    final normalized = email.trim().toLowerCase();
-    final found = _db.users.values.firstWhere(
+  // ── Chercher un user par email OU username ────────────────────────────────
+  Map<String, dynamic>? getUserByEmail(String emailOrUsername) {
+    final normalized = emailOrUsername.trim().toLowerCase();
+    // Chercher par email d'abord
+    var found = _db.users.values.firstWhere(
       (u) => u['email'] == normalized,
       orElse: () => {},
     );
+    // Sinon par username
+    if (found.isEmpty) {
+      found = _db.users.values.firstWhere(
+        (u) => (u['username'] as String?)?.toLowerCase() == normalized,
+        orElse: () => {},
+      );
+    }
     return found.isEmpty ? null : Map<String, dynamic>.from(found);
   }
 
@@ -93,17 +101,22 @@ class ChatService {
           return ids.contains(currentUser.id);
         })
         .map((c) {
-          final emails = List<String>.from(
-              jsonDecode(c['participantEmails'] ?? '[]'));
           final ids = List<String>.from(jsonDecode(c['participants'] ?? '[]'));
           final otherIdx = ids.indexWhere((id) => id != currentUser.id);
-          final email = emails.length > otherIdx && otherIdx >= 0
-              ? emails[otherIdx]
-              : 'Utilisateur';
+          final otherId = otherIdx >= 0 ? ids[otherIdx] : null;
+          // Récupérer le username de l'autre participant depuis la box users
+          String displayName = 'Utilisateur';
+          if (otherId != null) {
+            final otherData = _db.users.get(otherId);
+            if (otherData != null) {
+              displayName = (otherData['username'] as String?) ??
+                  (otherData['email'] as String? ?? 'Utilisateur');
+            }
+          }
           return {
             'conversationId': c['id'],
-            'email': email,
-            'name': email,
+            'email': displayName,
+            'name': displayName,
             'lastMessage': c['lastMessagePreview'] ?? 'Conversation sécurisée',
             'updatedAt': c['lastMessageAt'],
           };

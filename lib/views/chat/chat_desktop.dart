@@ -154,7 +154,7 @@ class _ChatDesktopState extends State<ChatDesktop> {
       TextField(
         controller: emailController,
         style: const TextStyle(color: Colors.white, fontSize: 13),
-        decoration: _fieldDeco("Email du destinataire", isDark: isDark),
+        decoration: _fieldDeco("@username ou email", isDark: isDark),
       ),
       const SizedBox(height: 10),
       SizedBox(

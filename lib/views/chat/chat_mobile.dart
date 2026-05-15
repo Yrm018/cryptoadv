@@ -135,7 +135,7 @@ class _ChatMobileState extends State<ChatMobile> {
     child: Column(children: [
       TextField(
         controller: emailController,
-        decoration: _inputDeco("Email du destinataire", isDark),
+        decoration: _inputDeco("@username ou email", isDark),
       ),
       const SizedBox(height: 10),
       SizedBox(
