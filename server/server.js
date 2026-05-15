@@ -1,0 +1,110 @@
+require('dotenv').config();
+const express   = require('express');
+const http      = require('http');
+const WebSocket = require('ws');
+const cors      = require('cors');
+const jwt       = require('jsonwebtoken');
+
+const authRoutes     = require('./routes/auth');
+const usersRoutes    = require('./routes/users');
+const messagesRoutes = require('./routes/messages');
+
+const PORT       = process.env.PORT       || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'cryptoadv_secret_change_me';
+
+// ── Express ───────────────────────────────────────────────────────────────────
+const app = express();
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));  // fichiers base64
+
+app.get('/health', (_, res) => res.json({ status: 'ok', ts: new Date() }));
+app.use('/auth',     authRoutes);
+app.use('/users',    usersRoutes);
+app.use('/messages', messagesRoutes);
+
+// ── HTTP server ───────────────────────────────────────────────────────────────
+const server = http.createServer(app);
+
+// ── WebSocket server ──────────────────────────────────────────────────────────
+const wss = new WebSocket.Server({ server, path: '/ws' });
+
+// Map userId → WebSocket client
+const clients = new Map();
+
+function sendTo(userId, payload) {
+  const ws = clients.get(userId);
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(payload));
+    return true;
+  }
+  return false;
+}
+
+wss.on('connection', (ws, req) => {
+  let userId = null;
+
+  ws.on('message', (raw) => {
+    let msg;
+    try { msg = JSON.parse(raw); } catch { return; }
+
+    switch (msg.type) {
+
+      // ── Auth ────────────────────────────────────────────────────────────────
+      case 'auth': {
+        try {
+          const decoded = jwt.verify(msg.token, JWT_SECRET);
+          userId = decoded.id;
+          clients.set(userId, ws);
+          ws.send(JSON.stringify({ type: 'auth_ok', userId }));
+          console.log(`[WS] Connected: ${userId}`);
+        } catch {
+          ws.send(JSON.stringify({ type: 'auth_error', error: 'Token invalide' }));
+          ws.close();
+        }
+        break;
+      }
+
+      // ── Message chat ────────────────────────────────────────────────────────
+      case 'message': {
+        if (!userId) return;
+        const { receiverId, ...payload } = msg;
+        // Envoyer au destinataire s'il est connecté
+        sendTo(receiverId, { type: 'message', ...payload, senderId: userId });
+        break;
+      }
+
+      // ── Signaling WebRTC (appels) ────────────────────────────────────────────
+      case 'call_offer':
+      case 'call_answer':
+      case 'call_ice':
+      case 'call_end':
+      case 'call_reject': {
+        if (!userId) return;
+        const target = msg.targetId;
+        sendTo(target, { ...msg, senderId: userId });
+        break;
+      }
+
+      // ── Ping ────────────────────────────────────────────────────────────────
+      case 'ping':
+        ws.send(JSON.stringify({ type: 'pong' }));
+        break;
+    }
+  });
+
+  ws.on('close', () => {
+    if (userId) {
+      clients.delete(userId);
+      console.log(`[WS] Disconnected: ${userId}`);
+    }
+  });
+
+  ws.on('error', (err) => console.error('[WS] Error:', err.message));
+});
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`CryptoAdv server running on port ${PORT}`);
+  console.log(`  REST  → http://0.0.0.0:${PORT}`);
+  console.log(`  WS    → ws://0.0.0.0:${PORT}/ws`);
+});
