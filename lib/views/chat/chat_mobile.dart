@@ -416,29 +416,73 @@ class _ChatMobileState extends State<ChatMobile> {
                   final photo =
                       otherId.isNotEmpty ? _chatService.getUserPhoto(otherId) : null;
                   final nameStr = conv['name'] as String? ?? conv['email'] as String? ?? '';
-                  return ListTile(
-                    leading: UserAvatar(
-                      photoBase64: photo,
-                      initial: nameStr,
-                      radius: 20,
-                      backgroundColor: Colors.blueGrey,
+                  return Dismissible(
+                    key: Key(conv['conversationId'] as String),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 20),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.delete_rounded, color: Colors.white),
                     ),
-                    title: Text(nameStr,
-                        style: const TextStyle(color: Colors.white)),
-                    subtitle: Text(conv['lastMessage'] ?? '',
-                        style:
-                            const TextStyle(color: Colors.white38, fontSize: 11),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                    onTap: () {
-                      _checkReceiverRsa(conv['email'] as String);
-                      setState(() {
-                        activeConversationId = conv['conversationId'];
-                        emailController.text = conv['email'] as String;
-                        _activeConvName = conv['name'] as String?;
-                        showSidebar = false;
-                      });
+                    confirmDismiss: (_) async {
+                      return await showDialog<bool>(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          backgroundColor: const Color(0xFF1E1E2E),
+                          title: const Text('Supprimer la conversation',
+                              style: TextStyle(color: Colors.white)),
+                          content: const Text(
+                              'Cette action supprimera la conversation pour les deux utilisateurs.',
+                              style: TextStyle(color: Colors.white70)),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('Annuler')),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('Supprimer',
+                                  style: TextStyle(color: Colors.redAccent))),
+                          ],
+                        ),
+                      ) ?? false;
                     },
+                    onDismissed: (_) async {
+                      try {
+                        await _chatService.deleteConversation(
+                            conv['conversationId'] as String);
+                      } catch (e) {
+                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Erreur : $e'),
+                              backgroundColor: Colors.redAccent));
+                      }
+                    },
+                    child: ListTile(
+                      leading: UserAvatar(
+                        photoBase64: photo,
+                        initial: nameStr,
+                        radius: 20,
+                        backgroundColor: Colors.blueGrey,
+                      ),
+                      title: Text(nameStr,
+                          style: const TextStyle(color: Colors.white)),
+                      subtitle: Text(conv['lastMessage'] ?? '',
+                          style: const TextStyle(color: Colors.white38, fontSize: 11),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                      onTap: () {
+                        _checkReceiverRsa(conv['email'] as String);
+                        setState(() {
+                          activeConversationId = conv['conversationId'];
+                          emailController.text = conv['email'] as String;
+                          _activeConvName = conv['name'] as String?;
+                          showSidebar = false;
+                        });
+                      },
+                    ),
                   );
                 },
               );
@@ -574,6 +618,61 @@ class _ChatMobileState extends State<ChatMobile> {
     );
   }
 
+  /// Affiche le menu de suppression au long press
+  void _showDeleteMenu(ChatMessageModel msg, bool isMe, AppL10n l) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E2E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            if (isMe) ListTile(
+              leading: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent),
+              title: const Text('Supprimer pour tout le monde',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(context);
+                try {
+                  await _chatService.deleteMessageForEveryone(msg.id, activeConversationId!);
+                } catch (e) {
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.redAccent));
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline_rounded, color: Colors.orange),
+              title: const Text('Supprimer pour moi',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(context);
+                await _chatService.deleteMessageForMe(msg.id, activeConversationId!);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.close_rounded, color: Colors.white38),
+              title: const Text('Annuler', style: TextStyle(color: Colors.white54)),
+              onTap: () => Navigator.pop(context),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _bubble(ChatMessageModel msg, bool isMe, bool isDark, AppL10n l, {bool showVu = false}) {
     final isAsymmetric = msg.encryptionMode == 'asymmetric';
     final badgeColor = isAsymmetric ? Colors.purpleAccent : Colors.greenAccent;
@@ -583,7 +682,9 @@ class _ChatMobileState extends State<ChatMobile> {
     final senderName =
         msg.senderName.isNotEmpty ? msg.senderName : msg.senderEmail;
 
-    return Padding(
+    return GestureDetector(
+      onLongPress: () => _showDeleteMenu(msg, isMe, l),
+      child: Padding(
       padding: const EdgeInsets.all(8.0),
       child: Row(
         mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -703,7 +804,7 @@ class _ChatMobileState extends State<ChatMobile> {
           ],
         ],
       ),
-    );
+    ));
   }
 
   /// Formater l'heure de lecture pour l'affichage "Vu 14:32"

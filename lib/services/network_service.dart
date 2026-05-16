@@ -133,6 +133,33 @@ class NetworkService {
     return _parse(res);
   }
 
+  /// Supprime un message pour tout le monde (expéditeur seulement)
+  Future<void> deleteMessage(String messageId) async {
+    final res = await http.delete(_uri('/messages/$messageId'), headers: _headers);
+    if (res.statusCode >= 400) {
+      final body = jsonDecode(utf8.decode(res.bodyBytes));
+      throw NetworkException(
+        statusCode: res.statusCode,
+        message: (body is Map && body['error'] != null) ? body['error'] : 'Erreur',
+      );
+    }
+  }
+
+  /// Supprime toute une conversation et ses messages
+  Future<void> deleteConversation(String conversationId) async {
+    final res = await http.delete(
+      _uri('/messages/conversation/$conversationId'),
+      headers: _headers,
+    );
+    if (res.statusCode >= 400) {
+      final body = jsonDecode(utf8.decode(res.bodyBytes));
+      throw NetworkException(
+        statusCode: res.statusCode,
+        message: (body is Map && body['error'] != null) ? body['error'] : 'Erreur',
+      );
+    }
+  }
+
   /// Marque tous les messages reçus de la conversation comme lus
   Future<void> markMessagesRead(String conversationId) async {
     final res = await http.patch(

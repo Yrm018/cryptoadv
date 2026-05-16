@@ -158,5 +158,60 @@ module.exports = function messagesRouter(sendTo) {
     }
   });
 
+  // ── DELETE /messages/conversation/:convId ─────────────────────────────────────
+  // Supprime toute la conversation (messages + enregistrement) pour les 2 parties
+  router.delete('/conversation/:convId', requireAuth, async (req, res) => {
+    const { convId } = req.params;
+    try {
+      const { rows } = await pool.query(
+        `SELECT user1_id, user2_id FROM conversations
+         WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)`,
+        [convId, String(req.user.id)]
+      );
+      if (!rows.length) return res.status(403).json({ error: 'Accès refusé' });
+
+      const otherId = rows[0].user1_id === String(req.user.id)
+        ? rows[0].user2_id : rows[0].user1_id;
+
+      await pool.query(`DELETE FROM messages     WHERE conversation_id = $1`, [convId]);
+      await pool.query(`DELETE FROM conversations WHERE id = $1`, [convId]);
+
+      // Notifier l'autre utilisateur en temps réel
+      sendTo(otherId, { type: 'conversation_deleted', conversationId: convId });
+
+      res.json({ deleted: true });
+    } catch (err) {
+      console.error(err); res.status(500).json({ error: 'Erreur serveur' });
+    }
+  });
+
+  // ── DELETE /messages/:id ──────────────────────────────────────────────────────
+  // Supprime un message pour tout le monde (expéditeur uniquement)
+  router.delete('/:id', requireAuth, async (req, res) => {
+    const { id } = req.params;
+    try {
+      const { rows } = await pool.query(
+        `DELETE FROM messages WHERE id = $1 AND sender_id = $2
+         RETURNING conversation_id`,
+        [id, String(req.user.id)]
+      );
+      if (!rows.length) return res.status(403).json({ error: 'Non autorisé' });
+
+      const convId = rows[0].conversation_id;
+      const { rows: conv } = await pool.query(
+        `SELECT user1_id, user2_id FROM conversations WHERE id = $1`, [convId]
+      );
+      if (conv.length) {
+        const otherId = conv[0].user1_id === String(req.user.id)
+          ? conv[0].user2_id : conv[0].user1_id;
+        sendTo(otherId, { type: 'message_deleted', messageId: id, conversationId: convId });
+      }
+
+      res.json({ deleted: true });
+    } catch (err) {
+      console.error(err); res.status(500).json({ error: 'Erreur serveur' });
+    }
+  });
+
   return router;
 };

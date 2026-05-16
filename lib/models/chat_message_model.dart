@@ -77,8 +77,10 @@ class ChatMessageModel {
       encryptedAesKey: map['encryptedAesKey'] ?? '',
       senderPlainText: map['senderPlainText'] ?? '',
       type: map['type'] ?? 'text',
-      fileName: map['fileName'],
-      fileSize: map['fileSize'],
+      fileName: map['fileName'] ?? map['file_name'],
+      fileSize: map['fileSize'] is int
+          ? map['fileSize'] as int
+          : int.tryParse(map['fileSize']?.toString() ?? map['file_size']?.toString() ?? ''),
       readAt: readAt,
     );
   }

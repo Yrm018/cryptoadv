@@ -217,6 +217,13 @@ class ChatService {
   Stream<List<ChatMessageModel>> getMessages(String conversationId) {
     _msgControllers[conversationId] ??=
         StreamController<List<ChatMessageModel>>.broadcast();
+
+    // Émettre immédiatement les données en cache (évite le race condition)
+    final cached = _messagesCache[conversationId];
+    if (cached != null) {
+      Future.microtask(() => _pushCachedMessages(conversationId));
+    }
+
     _loadMessages(conversationId);
     markConversationRead(conversationId);
     return _msgControllers[conversationId]!.stream;
@@ -229,13 +236,22 @@ class ChatService {
       if (currentUser == null) return;
 
       final serverMsgs = await _network.getMessages(conversationId);
-      final msgs = serverMsgs.map((m) => _mapServerMessage(m, conversationId, currentUser)).toList()
-        ..sort((a, b) => (a.createdAt ?? DateTime(0)).compareTo(b.createdAt ?? DateTime(0)));
+      final msgs = serverMsgs
+          .map((m) => _mapServerMessage(
+                Map<String, dynamic>.from(m), conversationId, currentUser))
+          .toList()
+        ..sort((a, b) =>
+            (a.createdAt ?? DateTime(0)).compareTo(b.createdAt ?? DateTime(0)));
 
       _messagesCache[conversationId] = msgs;
       _pushCachedMessages(conversationId);
     } catch (e) {
       debugPrint('[ChatService] _loadMessages $conversationId: $e');
+      // Émettre une liste vide pour sortir du CircularProgressIndicator
+      if (!(_messagesCache.containsKey(conversationId))) {
+        _messagesCache[conversationId] = [];
+        _pushCachedMessages(conversationId);
+      }
     }
   }
 
@@ -465,8 +481,62 @@ class ChatService {
     }
   }
 
-  /// Brancher le callback WebSocket message_read (appelé après login)
+  // ── Suppression ───────────────────────────────────────────────────────────
+
+  /// Supprime un message pour tout le monde (serveur + cache) — expéditeur only
+  Future<void> deleteMessageForEveryone(String messageId, String conversationId) async {
+    await _network.deleteMessage(messageId);
+    _removeFromCache(messageId, conversationId);
+  }
+
+  /// Supprime un message uniquement pour soi — stocké en SharedPreferences
+  Future<void> deleteMessageForMe(String messageId, String conversationId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final hidden = prefs.getStringList('hidden_msgs') ?? [];
+    if (!hidden.contains(messageId)) {
+      hidden.add(messageId);
+      await prefs.setStringList('hidden_msgs', hidden);
+    }
+    _removeFromCache(messageId, conversationId);
+  }
+
+  void _removeFromCache(String messageId, String conversationId) {
+    _messagesCache[conversationId]?.removeWhere((m) => m.id == messageId);
+    _pushCachedMessages(conversationId);
+  }
+
+  /// Supprime toute la conversation (serveur + cache local)
+  Future<void> deleteConversation(String conversationId) async {
+    await _network.deleteConversation(conversationId);
+    _messagesCache.remove(conversationId);
+    _conversationsCache.removeWhere((c) => c['conversationId'] == conversationId);
+    if (!_convController.isClosed) _convController.add(List.from(_conversationsCache));
+  }
+
+  /// Filtre les messages cachés (delete for me) avant de les pousser au stream
+  Future<List<String>> _getHiddenMessages() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList('hidden_msgs') ?? [];
+  }
+
+  /// Brancher tous les callbacks WebSocket (appelé après login)
   void listenToReadReceipts() {
+    // Message supprimé pour tout le monde
+    _socket.onMessageDeleted = (data) {
+      final msgId  = data['messageId']      as String?;
+      final convId = data['conversationId'] as String?;
+      if (msgId != null && convId != null) _removeFromCache(msgId, convId);
+    };
+
+    // Conversation supprimée par l'autre utilisateur
+    _socket.onConversationDeleted = (data) {
+      final convId = data['conversationId'] as String?;
+      if (convId == null) return;
+      _messagesCache.remove(convId);
+      _conversationsCache.removeWhere((c) => c['conversationId'] == convId);
+      if (!_convController.isClosed) _convController.add(List.from(_conversationsCache));
+    };
+
     _socket.onMessageRead = (data) {
       final convId = data['conversationId'] as String?;
       final readAt = data['readAt'] as String?;
@@ -497,7 +567,19 @@ class ChatService {
 
   // ── Sync on login (alias pour compatibilité avec AuthProvider) ────────────
 
-  Future<void> syncFromServer() => _loadConversations();
+  Future<void> syncFromServer() async {
+    // Charger la photo du user courant dans le cache
+    if (_network.isAuthenticated) {
+      try {
+        final me = await _network.getMe();
+        final currentUser = await _authService.currentUser;
+        if (currentUser != null && me['photo_base64'] != null) {
+          _userPhotoCache[currentUser.id] = me['photo_base64'] as String;
+        }
+      } catch (_) {}
+    }
+    await _loadConversations();
+  }
 
   // ── Déchiffrement ─────────────────────────────────────────────────────────
 

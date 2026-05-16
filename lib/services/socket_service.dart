@@ -20,6 +20,8 @@ class SocketService extends ChangeNotifier {
   // Callbacks
   void Function(Map<String, dynamic>)? onMessage;
   void Function(Map<String, dynamic>)? onMessageRead;
+  void Function(Map<String, dynamic>)? onMessageDeleted;
+  void Function(Map<String, dynamic>)? onConversationDeleted;
   void Function(Map<String, dynamic>)? onCallOffer;
   void Function(Map<String, dynamic>)? onCallAnswer;
   void Function(Map<String, dynamic>)? onCallIce;
@@ -138,6 +140,12 @@ class SocketService extends ChangeNotifier {
         break;
       case 'message_read':
         onMessageRead?.call(msg);
+        break;
+      case 'message_deleted':
+        onMessageDeleted?.call(msg);
+        break;
+      case 'conversation_deleted':
+        onConversationDeleted?.call(msg);
         break;
       case 'call_offer':
         onCallOffer?.call(msg);
