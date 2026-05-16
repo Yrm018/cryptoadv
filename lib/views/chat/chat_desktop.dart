@@ -600,18 +600,27 @@ class _ChatDesktopState extends State<ChatDesktop> {
         }
         final msgs = snap.data!;
         _scrollToBottom();
+        // Dernier message envoyé par moi qui a été lu par le destinataire
+        int lastReadSentIdx = -1;
+        for (int j = msgs.length - 1; j >= 0; j--) {
+          if (msgs[j].senderId == _currentUser?.id && msgs[j].readAt != null) {
+            lastReadSentIdx = j;
+            break;
+          }
+        }
         return ListView.builder(
           controller: _scrollController,
           padding: const EdgeInsets.all(16),
           itemCount: msgs.length,
           itemBuilder: (context, i) => _msgBubble(
-              msgs[i], _currentUser?.id == msgs[i].senderId, isDark, l),
+              msgs[i], _currentUser?.id == msgs[i].senderId, isDark, l,
+              showVu: i == lastReadSentIdx),
         );
       },
     );
   }
 
-  Widget _msgBubble(ChatMessageModel msg, bool isMe, bool isDark, AppL10n l) {
+  Widget _msgBubble(ChatMessageModel msg, bool isMe, bool isDark, AppL10n l, {bool showVu = false}) {
     final isAsymmetric = msg.encryptionMode == 'asymmetric';
     final badgeColor = isAsymmetric ? Colors.purpleAccent : Colors.greenAccent;
     final badgeLabel = isAsymmetric ? 'RSA+AES' : msg.algorithm.toUpperCase();
@@ -620,7 +629,9 @@ class _ChatDesktopState extends State<ChatDesktop> {
     final senderName =
         msg.senderName.isNotEmpty ? msg.senderName : msg.senderEmail;
 
-    return Padding(
+    return GestureDetector(
+      onLongPress: () => _showDeleteMenu(msg, isMe, l),
+      child: Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -695,18 +706,7 @@ class _ChatDesktopState extends State<ChatDesktop> {
                       }
 
                       if (msg.type == 'image') {
-                        return GestureDetector(
-                          onTap: () => _showMediaPreview(decrypted, msg.fileName ?? 'image.png', 'image'),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.memory(
-                              base64Decode(decrypted),
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
-                                  const Icon(Icons.error, color: Colors.white38),
-                            ),
-                          ),
-                        );
+                        return _imageBubble(decrypted, msg);
                       } else if (msg.type == 'file' || msg.type == 'video') {
                         return InkWell(
                           onTap: () => _handleDownload(decrypted, msg.fileName ?? 'file'),
@@ -740,6 +740,20 @@ class _ChatDesktopState extends State<ChatDesktop> {
                     style: const TextStyle(color: Colors.white38, fontSize: 10),
                   ),
                 ],
+                if (showVu) ...[
+                  const SizedBox(height: 2),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.done_all_rounded, size: 11, color: Colors.lightBlueAccent),
+                      const SizedBox(width: 3),
+                      Text(
+                        'Vu ${_formatReadAt(msg.readAt)}',
+                        style: const TextStyle(color: Colors.lightBlueAccent, fontSize: 10),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           )),
@@ -757,7 +771,110 @@ class _ChatDesktopState extends State<ChatDesktop> {
           ],
         ],
       ),
+    ));
+  }
+
+  // ─── Image bubble (taille fixe, tap pour agrandir) ────────────────────────
+
+  Widget _imageBubble(String base64Data, ChatMessageModel msg) {
+    if (base64Data.startsWith('🔒') || base64Data.startsWith('🔐')) {
+      return Container(
+        width: 220, height: 160,
+        decoration: BoxDecoration(
+          color: Colors.white10, borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(Icons.lock_rounded, color: Colors.white38, size: 32),
+          SizedBox(height: 6),
+          Text('Image chiffrée', style: TextStyle(color: Colors.white38, fontSize: 12)),
+        ]),
+      );
+    }
+    try {
+      final bytes = base64Decode(base64Data);
+      return GestureDetector(
+        onTap: () => _showMediaPreview(base64Data, msg.fileName ?? 'image.png', 'image'),
+        child: Container(
+          width: 220, height: 160,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white10),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.memory(bytes, fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const Center(
+                child: Icon(Icons.broken_image, color: Colors.white38, size: 32)),
+            ),
+          ),
+        ),
+      );
+    } catch (_) {
+      return Container(
+        width: 220, height: 160,
+        decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(12)),
+        child: const Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 32)),
+      );
+    }
+  }
+
+  // ─── Suppression d'un message ─────────────────────────────────────────────
+
+  void _showDeleteMenu(ChatMessageModel msg, bool isMe, AppL10n l) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2E),
+        title: const Text('Message', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isMe) ListTile(
+              leading: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent),
+              title: const Text('Supprimer pour tout le monde',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(context);
+                try {
+                  await _chatService.deleteMessageForEveryone(msg.id, activeConversationId!);
+                } catch (e) {
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.redAccent));
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline_rounded, color: Colors.orange),
+              title: const Text('Supprimer pour moi',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(context);
+                await _chatService.deleteMessageForMe(msg.id, activeConversationId!);
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler', style: TextStyle(color: Colors.white54)),
+          ),
+        ],
+      ),
     );
+  }
+
+  /// Format "14:32" ou "12/05 14:32" si hier ou avant
+  String _formatReadAt(DateTime? readAt) {
+    if (readAt == null) return '';
+    final local = readAt.toLocal();
+    final now = DateTime.now();
+    if (local.year == now.year && local.month == now.month && local.day == now.day) {
+      return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    }
+    return '${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')} '
+        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
   }
 
   // ─── Input ────────────────────────────────────────────────────────────────
