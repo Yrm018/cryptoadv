@@ -394,18 +394,17 @@ class ChatService {
           });
         }
 
-        // Sauvegarder l'utilisateur distant en local pour l'UI
-        if (!_db.users.containsKey(otherId)) {
-          await _db.users.put(otherId, {
-            'id':          otherId,
-            'email':       otherEmail,
-            'username':    otherName,
-            'displayName': '${conv['first_name'] ?? ''} ${conv['last_name'] ?? ''}'.trim().isNotEmpty
-                             ? '${conv['first_name']} ${conv['last_name']}'
-                             : otherName,
-            'photoBase64': conv['photo_base64'],
-          });
-        }
+        // Toujours mettre à jour les données utilisateur depuis le serveur
+        // (pour avoir le bon username même si l'entrée Hive existait déjà)
+        await _db.users.put(otherId, {
+          'id':          otherId,
+          'email':       otherEmail,
+          'username':    otherName,
+          'displayName': '${conv['first_name'] ?? ''} ${conv['last_name'] ?? ''}'.trim().isNotEmpty
+                           ? '${conv['first_name']} ${conv['last_name']}'
+                           : otherName,
+          'photoBase64': conv['photo_base64'],
+        });
 
         // Récupérer les messages du serveur
         try {
