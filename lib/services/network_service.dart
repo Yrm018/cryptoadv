@@ -115,6 +115,7 @@ class NetworkService {
     int?    fileSize,
     String? encryptedAesKey,
     String? iv,
+    String? mac,
     String? signature,
   }) async {
     final res = await http.post(_uri('/messages'),
@@ -127,6 +128,7 @@ class NetworkService {
         if (fileSize        != null) 'fileSize':        fileSize,
         if (encryptedAesKey != null) 'encryptedAesKey': encryptedAesKey,
         if (iv              != null) 'iv':              iv,
+        if (mac             != null) 'mac':             mac,
         if (signature       != null) 'signature':       signature,
       }),
     );

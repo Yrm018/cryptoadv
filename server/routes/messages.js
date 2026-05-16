@@ -100,7 +100,7 @@ module.exports = function messagesRouter(sendTo) {
     const {
       id, conversationId, receiverId,
       cipherText, mode, algorithm, type,
-      fileName, fileSize, encryptedAesKey, iv, signature
+      fileName, fileSize, encryptedAesKey, iv, mac, signature
     } = req.body;
 
     if (!conversationId || !cipherText || !receiverId)
@@ -119,14 +119,14 @@ module.exports = function messagesRouter(sendTo) {
       const { rows } = await pool.query(
         `INSERT INTO messages
            (id, conversation_id, sender_id, cipher_text, mode, algorithm, type,
-            file_name, file_size, encrypted_aes_key, iv, signature)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+            file_name, file_size, encrypted_aes_key, iv, mac, signature)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
          ON CONFLICT (id) DO NOTHING
          RETURNING *`,
         [msgId, conversationId, req.user.id, cipherText,
          mode || 'sym', algorithm || 'AES', type || 'text',
          fileName || null, fileSize || null,
-         encryptedAesKey || null, iv || null, signature || null]
+         encryptedAesKey || null, iv || null, mac || null, signature || null]
       );
 
       const saved = rows[0];
@@ -146,6 +146,7 @@ module.exports = function messagesRouter(sendTo) {
           fileSize:       saved.file_size,
           encryptedAesKey: saved.encrypted_aes_key,
           iv:             saved.iv,
+          mac:            saved.mac,
           signature:      saved.signature,
           timestamp:      saved.timestamp,
         });
