@@ -189,6 +189,15 @@ class _VpnMobileState extends State<VpnMobile> with SingleTickerProviderStateMix
         const SizedBox(height: 16),
         Text(l.t('vpn_gen_keys_loading'),
           style: const TextStyle(color: Colors.white54)),
+        const SizedBox(height: 12),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 32),
+          child: Text(
+            '⏳ Génération RSA 2048-bit...\nCela peut prendre 20-30 secondes,\nne quittez pas la page.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.orange, fontSize: 12),
+          ),
+        ),
       ]));
     }
     if (!_hasKeys) {

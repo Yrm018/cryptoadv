@@ -140,16 +140,34 @@ class ChatService {
           return ids.contains(currentUser.id);
         })
         .map((c) {
-          final ids = List<String>.from(jsonDecode(c['participants'] ?? '[]'));
+          final ids    = List<String>.from(jsonDecode(c['participants']      ?? '[]'));
+          final emails = List<String>.from(jsonDecode(c['participantEmails'] ?? '[]'));
+          final names  = List<String>.from(jsonDecode(c['participantNames']  ?? '[]'));
           final otherId = ids.firstWhere((id) => id != currentUser.id, orElse: () => '');
+          final otherIndex = ids.indexOf(otherId);
+
+          // Email réel du destinataire (indispensable pour sendMessage)
+          String otherEmail = otherIndex >= 0 && otherIndex < emails.length
+              ? emails[otherIndex]
+              : '';
+
+          // Nom d'affichage : priorité Hive → participantNames → username du Hive → email
           String displayName = 'Utilisateur';
           if (otherId.isNotEmpty) {
             final d = _db.users.get(otherId);
-            if (d != null) displayName = (d['username'] as String?) ?? (d['email'] as String? ?? 'Utilisateur');
+            if (d != null) {
+              displayName = (d['username'] as String?)?.isNotEmpty == true
+                  ? d['username'] as String
+                  : (d['email'] as String? ?? 'Utilisateur');
+              if (otherEmail.isEmpty) otherEmail = (d['email'] as String?) ?? '';
+            } else if (otherIndex >= 0 && otherIndex < names.length && names[otherIndex].isNotEmpty) {
+              displayName = names[otherIndex];
+            }
           }
+
           return {
             'conversationId': c['id'],
-            'email':          displayName,
+            'email':          otherEmail.isNotEmpty ? otherEmail : displayName,
             'name':           displayName,
             'lastMessage':    c['lastMessagePreview'] ?? 'Conversation sécurisée',
             'updatedAt':      c['lastMessageAt'],
@@ -168,7 +186,42 @@ class ChatService {
     _msgControllers[conversationId] ??=
         StreamController<List<ChatMessageModel>>.broadcast();
     _pushMessageUpdate(conversationId);
+    // Marquer les messages reçus comme lus dès l'ouverture de la conversation
+    markConversationRead(conversationId);
     return _msgControllers[conversationId]!.stream;
+  }
+
+  /// Notifie le serveur que le currentUser a lu les messages de cette conversation.
+  /// Le serveur met à jour read_at et envoie un event WS message_read à l'expéditeur.
+  Future<void> markConversationRead(String conversationId) async {
+    if (!_network.isAuthenticated) return;
+    try {
+      await _network.markMessagesRead(conversationId);
+    } catch (e) {
+      debugPrint('[ChatService] markConversationRead: $e');
+    }
+  }
+
+  /// Appelé par AuthProvider après le login pour brancher le callback WS message_read
+  void listenToReadReceipts() {
+    _socket.onMessageRead = (data) async {
+      final convId  = data['conversationId'] as String?;
+      final readAt  = data['readAt'] as String?;
+      if (convId == null || readAt == null) return;
+
+      // Mettre à jour en local : tous les messages de la box qui n'ont pas encore readAt
+      final box = await _db.messagesBox(convId);
+      bool changed = false;
+      for (final key in box.keys) {
+        final m = Map<String, dynamic>.from(box.get(key) ?? {});
+        if (m['readAt'] == null) {
+          m['readAt'] = readAt;
+          await box.put(key, m);
+          changed = true;
+        }
+      }
+      if (changed) _pushMessageUpdate(convId);
+    };
   }
 
   void _pushMessageUpdate(String conversationId) async {
@@ -430,15 +483,22 @@ class ChatService {
     if (msg.encryptionMode == 'asymmetric') {
       return _decryptAsymmetric(msg);
     }
+
+    // Pour les messages envoyés par soi-même : retourner le texte en clair directement
+    final currentUser = await _authService.currentUser;
+    if (currentUser != null && msg.senderId == currentUser.id) {
+      return msg.senderPlainText.isNotEmpty ? msg.senderPlainText : '🔐 Message envoyé';
+    }
+
     final key = getConversationKey(msg.conversationId) ?? '';
-    if (key.isEmpty) return '🔒';
+    if (key.isEmpty) return '🔒 Message chiffré';
     try {
       return await CryptoAvance.decryptMessage(
         cipherText: msg.cipherText, nonce: msg.nonce, mac: msg.mac,
         key: key, algorithm: msg.algorithm.isEmpty ? 'aes-gcm' : msg.algorithm,
       );
     } catch (_) {
-      return '🔒 Déchiffrement impossible';
+      return '🔒 Message chiffré';
     }
   }
 

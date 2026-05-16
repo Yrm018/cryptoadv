@@ -56,6 +56,42 @@ module.exports = function messagesRouter(sendTo) {
     }
   });
 
+  // ── PATCH /messages/:conversationId/read ─────────────────────────────────────
+  // Marque les messages reçus comme lus et notifie l'expéditeur en WS
+  router.patch('/:conversationId/read', requireAuth, async (req, res) => {
+    const { conversationId } = req.params;
+    try {
+      // Vérifier appartenance
+      const { rows: check } = await pool.query(
+        `SELECT id FROM conversations WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)`,
+        [conversationId, req.user.id]
+      );
+      if (!check.length) return res.status(403).json({ error: 'Accès refusé' });
+
+      // Marquer comme lus tous les messages reçus (pas envoyés par moi) non encore lus
+      const now = new Date().toISOString();
+      const { rows: updated } = await pool.query(
+        `UPDATE messages
+         SET read_at = NOW()
+         WHERE conversation_id = $1
+           AND sender_id != $2
+           AND read_at IS NULL
+         RETURNING sender_id`,
+        [conversationId, req.user.id]
+      );
+
+      // Notifier chaque expéditeur unique en temps réel
+      const senderIds = [...new Set(updated.map(r => String(r.sender_id)))];
+      for (const sid of senderIds) {
+        sendTo(sid, { type: 'message_read', conversationId, readAt: now });
+      }
+
+      res.json({ updated: updated.length, readAt: now });
+    } catch (err) {
+      console.error(err); res.status(500).json({ error: 'Erreur serveur' });
+    }
+  });
+
   // ── POST /messages ────────────────────────────────────────────────────────────
   router.post('/', requireAuth, async (req, res) => {
     const {

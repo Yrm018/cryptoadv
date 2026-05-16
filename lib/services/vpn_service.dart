@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/database/database_service.dart';
 import '../services/auth_service.dart';
+import '../services/network_service.dart';
 import '../backend/crypto/cryptavance.dart';
 import '../backend/security/rsa_service.dart';
 import '../backend/security/pki_service.dart';
@@ -28,8 +29,9 @@ class VpnDecryptResult {
 }
 
 class VpnService {
-  final _db = DatabaseService.instance;
-  final _auth = AuthService();
+  final _db      = DatabaseService.instance;
+  final _auth    = AuthService();
+  final _network = NetworkService.instance;
 
   // Récupère l'utilisateur courant (async car hive)
   Future<LocalUser> _getUser() async {
@@ -53,25 +55,41 @@ class VpnService {
 
   Future<void> generateAndRegisterKeys() async {
     final user = await _getUser();
+
+    // Génération RSA dans un isolate (évite de bloquer l'UI)
     final keys = await compute(generateKeyPairIsolated, 2048);
-    final pubJson = keys['pub']!;
+    final pubJson  = keys['pub']!;
     final privJson = keys['priv']!;
 
-    // Clé privée : stockée localement (jamais partagée)
+    // 1. Clé privée : stockée localement uniquement (jamais partagée)
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('rsa_priv_${user.id}', privJson);
 
-    // Clé publique + serial : stockés dans le profil hive de l'utilisateur
-    final userData = Map<String, dynamic>.from(_db.users.get(user.id) ?? {});
+    // 2. Clé publique : Hive local
+    final userData = Map<String, dynamic>.from(_db.users.get(user.id) ?? {
+      'id':    user.id,
+      'email': user.email,
+      'username': user.username,
+    });
     userData['rsaPublicKey'] = pubJson;
     await _db.users.put(user.id, userData);
 
+    // 3. Clé publique : uploadée sur le serveur EC2
+    //    → les autres utilisateurs peuvent la récupérer via /users/search
+    if (_network.isAuthenticated) {
+      try {
+        await _network.updateProfile(publicKey: pubJson);
+      } catch (e) {
+        debugPrint('[VpnService] Upload clé publique échoué: $e');
+      }
+    }
+
+    // 4. Certificat X.509 local
     final cert = await PkiService.issueCertificate(
       userEmail: user.email,
-      userUid: user.id,
+      userUid:   user.id,
       userPublicKeyJson: pubJson,
     );
-
     userData['rsaCertSerial'] = cert.serialNumber;
     await _db.users.put(user.id, userData);
   }

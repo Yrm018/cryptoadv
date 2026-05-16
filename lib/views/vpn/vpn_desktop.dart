@@ -206,6 +206,14 @@ class _VpnDesktopState extends State<VpnDesktop> with SingleTickerProviderStateM
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 16)),
         ),
+        if (_isGenerating) ...[
+          const SizedBox(height: 16),
+          const Text(
+            '⏳ Génération RSA 2048-bit en cours...\nCela peut prendre 20-30 secondes, ne quittez pas la page.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.orange, fontSize: 13),
+          ),
+        ],
       ]));
     }
 

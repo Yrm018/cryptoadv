@@ -38,6 +38,7 @@ class AuthProvider extends ChangeNotifier {
       final token = prefs.getString(_kSavedToken);
       if (token != null) {
         _network.setToken(token);
+        ChatService.instance.listenToReadReceipts();
         await _socket.connect(token);
         // Récupérer les messages manqués pendant la déconnexion
         ChatService.instance.syncFromServer().catchError(
@@ -70,6 +71,7 @@ class AuthProvider extends ChangeNotifier {
       await prefs.setString(_kSavedToken, token);
 
       _network.setToken(token);
+      ChatService.instance.listenToReadReceipts();
 
       // Sauvegarder la session localement (SharedPreferences + Hive)
       // afin que ChatService.currentUser puisse retrouver l'utilisateur.

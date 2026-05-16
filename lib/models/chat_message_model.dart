@@ -22,6 +22,9 @@ class ChatMessageModel {
   final String? fileName;
   final int? fileSize;
 
+  /// Date à laquelle le destinataire a lu le message (null = non lu)
+  final DateTime? readAt;
+
   const ChatMessageModel({
     required this.id,
     required this.conversationId,
@@ -42,6 +45,7 @@ class ChatMessageModel {
     this.type = 'text',
     this.fileName,
     this.fileSize,
+    this.readAt,
   });
 
   factory ChatMessageModel.fromMap(String id, Map<String, dynamic> map) {
@@ -49,6 +53,11 @@ class ChatMessageModel {
     DateTime? createdAt;
     if (raw is String) createdAt = DateTime.tryParse(raw);
     if (raw is DateTime) createdAt = raw;
+
+    final rawRead = map['readAt'];
+    DateTime? readAt;
+    if (rawRead is String) readAt = DateTime.tryParse(rawRead);
+    if (rawRead is DateTime) readAt = rawRead;
 
     return ChatMessageModel(
       id: id,
@@ -70,6 +79,7 @@ class ChatMessageModel {
       type: map['type'] ?? 'text',
       fileName: map['fileName'],
       fileSize: map['fileSize'],
+      readAt: readAt,
     );
   }
 
@@ -92,5 +102,6 @@ class ChatMessageModel {
         'type': type,
         'fileName': fileName,
         'fileSize': fileSize,
+        'readAt': readAt?.toIso8601String(),
       };
 }

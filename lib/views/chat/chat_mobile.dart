@@ -30,6 +30,7 @@ class _ChatMobileState extends State<ChatMobile> {
   final TextEditingController messageController = TextEditingController();
 
   String? activeConversationId;
+  String? _activeConvName;
   bool showSidebar = true;
 
   /// Fichiers en attente d'envoi (File d'attente style Messenger)
@@ -350,7 +351,7 @@ class _ChatMobileState extends State<ChatMobile> {
       drawer: const AppDrawer(currentPage: 'chat'),
       appBar: AppBar(
         title: Text(
-            showSidebar ? l.t('chat_conversations') : emailController.text,
+            showSidebar ? l.t('chat_conversations') : (_activeConvName ?? emailController.text),
             overflow: TextOverflow.ellipsis),
         leading: showSidebar
             ? Builder(
@@ -414,7 +415,7 @@ class _ChatMobileState extends State<ChatMobile> {
                   final otherId = conv['otherUserId'] as String? ?? '';
                   final photo =
                       otherId.isNotEmpty ? _chatService.getUserPhoto(otherId) : null;
-                  final nameStr = conv['email'] as String? ?? '';
+                  final nameStr = conv['name'] as String? ?? conv['email'] as String? ?? '';
                   return ListTile(
                     leading: UserAvatar(
                       photoBase64: photo,
@@ -422,7 +423,7 @@ class _ChatMobileState extends State<ChatMobile> {
                       radius: 20,
                       backgroundColor: Colors.blueGrey,
                     ),
-                    title: Text(conv['email'],
+                    title: Text(nameStr,
                         style: const TextStyle(color: Colors.white)),
                     subtitle: Text(conv['lastMessage'] ?? '',
                         style:
@@ -433,7 +434,8 @@ class _ChatMobileState extends State<ChatMobile> {
                       _checkReceiverRsa(conv['email'] as String);
                       setState(() {
                         activeConversationId = conv['conversationId'];
-                        emailController.text = conv['email'];
+                        emailController.text = conv['email'] as String;
+                        _activeConvName = conv['name'] as String?;
                         showSidebar = false;
                       });
                     },
@@ -458,14 +460,24 @@ class _ChatMobileState extends State<ChatMobile> {
               return const Center(child: CircularProgressIndicator());
             }
             _scrollToBottom();
+            final msgs = snap.data!;
+            // Trouver le dernier message envoyé par moi qui a été vu
+            int lastReadSentIdx = -1;
+            for (int j = msgs.length - 1; j >= 0; j--) {
+              if (msgs[j].senderId == _currentUser?.id && msgs[j].readAt != null) {
+                lastReadSentIdx = j;
+                break;
+              }
+            }
             return ListView.builder(
               controller: _scrollController,
               padding: const EdgeInsets.all(12),
-              itemCount: snap.data!.length,
+              itemCount: msgs.length,
               itemBuilder: (context, i) {
-                final msg = snap.data![i];
+                final msg = msgs[i];
                 final isMe = msg.senderId == _currentUser?.id;
-                return _bubble(msg, isMe, isDark, l);
+                final showVu = isMe && i == lastReadSentIdx;
+                return _bubble(msg, isMe, isDark, l, showVu: showVu);
               },
             );
           },
@@ -562,7 +574,7 @@ class _ChatMobileState extends State<ChatMobile> {
     );
   }
 
-  Widget _bubble(ChatMessageModel msg, bool isMe, bool isDark, AppL10n l) {
+  Widget _bubble(ChatMessageModel msg, bool isMe, bool isDark, AppL10n l, {bool showVu = false}) {
     final isAsymmetric = msg.encryptionMode == 'asymmetric';
     final badgeColor = isAsymmetric ? Colors.purpleAccent : Colors.greenAccent;
     final badgeLabel = isAsymmetric ? 'RSA+AES' : msg.algorithm.toUpperCase();
@@ -658,6 +670,22 @@ class _ChatMobileState extends State<ChatMobile> {
                     );
                   },
                 ),
+
+                // Indicateur "Vu ✓✓" sous le dernier message envoyé et lu
+                if (showVu) ...[
+                  const SizedBox(height: 3),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.done_all_rounded, size: 12, color: Colors.lightBlueAccent),
+                      const SizedBox(width: 3),
+                      Text(
+                        'Vu ${_formatReadAt(msg.readAt)}',
+                        style: const TextStyle(color: Colors.lightBlueAccent, fontSize: 10),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           )),
@@ -678,26 +706,68 @@ class _ChatMobileState extends State<ChatMobile> {
     );
   }
 
+  /// Formater l'heure de lecture pour l'affichage "Vu 14:32"
+  String _formatReadAt(DateTime? readAt) {
+    if (readAt == null) return '';
+    final local = readAt.toLocal();
+    final now = DateTime.now();
+    if (local.year == now.year && local.month == now.month && local.day == now.day) {
+      return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    }
+    return '${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')} '
+        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+  }
+
   /// Bulle Image mobile
-  Widget _imageBubble(String base64, ChatMessageModel msg, bool isMe) {
-    return GestureDetector(
-      onTap: () => _showMediaPreview(base64, msg.fileName ?? 'image.png', 'image'),
-      child: Container(
+  Widget _imageBubble(String base64Data, ChatMessageModel msg, bool isMe) {
+    // Si le déchiffrement a échoué, afficher un placeholder propre
+    if (base64Data.startsWith('🔒') || base64Data.startsWith('🔐')) {
+      return Container(
         width: 180,
+        height: 120,
         decoration: BoxDecoration(
+          color: Colors.white10,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: Colors.white10),
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: Image.memory(
-            base64Decode(base64),
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white38),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Icon(Icons.lock_rounded, color: Colors.white38, size: 28),
+          const SizedBox(height: 6),
+          Text('Image chiffrée', style: const TextStyle(color: Colors.white38, fontSize: 11)),
+        ]),
+      );
+    }
+
+    try {
+      final bytes = base64Decode(base64Data);
+      return GestureDetector(
+        onTap: () => _showMediaPreview(base64Data, msg.fileName ?? 'image.png', 'image'),
+        child: Container(
+          width: 180,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white10),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.memory(
+              bytes,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const SizedBox(
+                width: 180, height: 120,
+                child: Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 28)),
+              ),
+            ),
           ),
         ),
-      ),
-    );
+      );
+    } catch (_) {
+      return Container(
+        width: 180, height: 120,
+        decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
+        child: const Center(child: Icon(Icons.broken_image, color: Colors.white38, size: 28)),
+      );
+    }
   }
 
   /// Bulle Fichier mobile
