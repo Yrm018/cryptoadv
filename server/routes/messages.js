@@ -33,6 +33,67 @@ module.exports = function messagesRouter(sendTo) {
     }
   });
 
+  // ── GET /messages/conversations/:convId/key ──────────────────────────────────
+  // Retourne la clé AES partagée pour cette conversation
+  router.get('/conversations/:convId/key', requireAuth, async (req, res) => {
+    const { convId } = req.params;
+    try {
+      const { rows } = await pool.query(
+        `SELECT aes_key FROM conversations
+         WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)`,
+        [convId, String(req.user.id)]
+      );
+      if (!rows.length) return res.status(403).json({ error: 'Accès refusé' });
+      res.json({ aes_key: rows[0].aes_key || null });
+    } catch (err) {
+      console.error(err); res.status(500).json({ error: 'Erreur serveur' });
+    }
+  });
+
+  // ── PUT /messages/conversations/:convId/key ───────────────────────────────────
+  // Stocke la clé AES (premier arrivé = gagnant, pour éviter les conflits)
+  router.put('/conversations/:convId/key', requireAuth, async (req, res) => {
+    const { convId } = req.params;
+    const { aes_key } = req.body;
+    if (!aes_key) return res.status(400).json({ error: 'aes_key manquant' });
+    try {
+      // Vérifier l'appartenance
+      const { rows: check } = await pool.query(
+        `SELECT id, aes_key FROM conversations
+         WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)`,
+        [convId, String(req.user.id)]
+      );
+      if (!check.length) return res.status(403).json({ error: 'Accès refusé' });
+
+      // Si la conversation n'existe pas encore, on la crée d'abord
+      // (cas : clé poussée avant le premier message)
+      if (!check[0]) {
+        return res.status(404).json({ error: 'Conversation introuvable' });
+      }
+
+      // Premier arrivé gagnant : ne mettre à jour que si aes_key est encore NULL
+      const { rows } = await pool.query(
+        `UPDATE conversations
+         SET aes_key = $2
+         WHERE id = $1 AND (aes_key IS NULL OR aes_key = '')
+         RETURNING aes_key`,
+        [convId, aes_key]
+      );
+
+      // Si aucune ligne mise à jour → une clé existait déjà, on retourne la clé actuelle
+      if (!rows.length) {
+        const { rows: current } = await pool.query(
+          `SELECT aes_key FROM conversations WHERE id = $1`, [convId]
+        );
+        return res.json({ aes_key: current[0]?.aes_key, conflict: true });
+      }
+
+      res.json({ aes_key: rows[0].aes_key });
+    } catch (err) {
+      console.error(err); res.status(500).json({ error: 'Erreur serveur' });
+    }
+  });
+
   // ── GET /messages/:conversationId ────────────────────────────────────────────
   router.get('/:conversationId', requireAuth, async (req, res) => {
     const { conversationId } = req.params;
@@ -100,19 +161,22 @@ module.exports = function messagesRouter(sendTo) {
     const {
       id, conversationId, receiverId,
       cipherText, mode, algorithm, type,
-      fileName, fileSize, encryptedAesKey, iv, mac, signature
+      fileName, fileSize, encryptedAesKey, iv, mac, signature, aesKey
     } = req.body;
 
     if (!conversationId || !cipherText || !receiverId)
       return res.status(400).json({ error: 'Champs manquants (conversationId, cipherText, receiverId)' });
 
     try {
-      // Créer la conversation si elle n'existe pas
+      // Créer la conversation si elle n'existe pas, et stocker la clé AES si fournie.
+      // COALESCE garantit que la première clé posée ne sera jamais écrasée (first writer wins).
       const [uid1, uid2] = [String(req.user.id), String(receiverId)].sort();
       await pool.query(
-        `INSERT INTO conversations (id, user1_id, user2_id)
-         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-        [conversationId, uid1, uid2]
+        `INSERT INTO conversations (id, user1_id, user2_id, aes_key)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (id) DO UPDATE
+           SET aes_key = COALESCE(conversations.aes_key, EXCLUDED.aes_key)`,
+        [conversationId, uid1, uid2, aesKey || null]
       );
 
       const msgId = id || `${Date.now()}_${Math.floor(Math.random() * 1e6)}`;

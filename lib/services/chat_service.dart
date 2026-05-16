@@ -50,14 +50,50 @@ class ChatService {
     return full.isNotEmpty ? full : ((u['username'] ?? u['email'] ?? '').toString());
   }
 
+  /// Retourne la clé AES de la conversation.
+  /// Priorité : cache local (SharedPreferences) → serveur PostgreSQL.
+  /// Quand la clé vient du serveur, elle est mise en cache localement.
   Future<String?> getConversationKey(String convId) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('aes_conv_$convId');
+    final local = prefs.getString('aes_conv_$convId');
+    if (local != null && local.isNotEmpty) return local;
+
+    // Pas de clé locale → on demande au serveur
+    if (_network.isAuthenticated) {
+      try {
+        final serverKey = await _network.fetchConversationKey(convId);
+        if (serverKey != null && serverKey.isNotEmpty) {
+          await prefs.setString('aes_conv_$convId', serverKey);
+          return serverKey;
+        }
+      } catch (e) {
+        debugPrint('[ChatService] getConversationKey (server): $e');
+      }
+    }
+    return null;
   }
 
+  /// Stocke la clé AES localement ET la pousse vers le serveur (best-effort).
+  /// Si le serveur retourne une clé différente (conflit), on adopte la clé du serveur
+  /// pour rester cohérent avec l'autre appareil.
   Future<void> _setConversationKey(String convId, String key) async {
     final prefs = await SharedPreferences.getInstance();
+    // Stocker localement d'abord (réponse immédiate)
     await prefs.setString('aes_conv_$convId', key);
+
+    if (_network.isAuthenticated) {
+      try {
+        final confirmedKey = await _network.pushConversationKey(convId, key);
+        // Si le serveur avait déjà une autre clé (conflit), on l'adopte
+        if (confirmedKey != key) {
+          await prefs.setString('aes_conv_$convId', confirmedKey);
+          debugPrint('[ChatService] Clé AES adoptée depuis le serveur (conflit résolu) pour $convId');
+        }
+      } catch (e) {
+        debugPrint('[ChatService] _setConversationKey (server push): $e');
+        // En cas d'échec réseau, la clé locale reste valide pour cette session
+      }
+    }
   }
 
   Future<Map<String, dynamic>?> getUserByEmail(String emailOrUsername) async {
@@ -104,8 +140,14 @@ class ChatService {
     final currentUser = await _authService.currentUser;
     if (currentUser == null) throw Exception('Utilisateur non connecté');
     final convId = _buildConversationId(currentUser.id, otherUserId);
+    // Si on n'a pas encore de clé, on en génère une et on la stocke localement.
+    // La clé sera poussée vers le serveur lors du premier envoi de message (via aesKey dans POST /messages),
+    // ce qui garantit que la conversation existe déjà dans la DB à ce moment-là.
     final existingKey = await getConversationKey(convId);
-    if (existingKey == null) await _setConversationKey(convId, _generateAesKey());
+    if (existingKey == null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('aes_conv_$convId', _generateAesKey());
+    }
     return convId;
   }
 
@@ -341,6 +383,11 @@ class ChatService {
 
     if (_network.isAuthenticated) {
       try {
+        // Pour le mode symétrique, on inclut la clé AES dans le POST messages.
+        // Le serveur la stocke dans conversations.aes_key (COALESCE : first writer wins).
+        // Ainsi, l'autre appareil peut la récupérer via GET /conversations/:convId/key.
+        final convAesKey = mode == 'symmetric' ? await getConversationKey(conversationId) : null;
+
         await _network.sendMessage(
           id:              msgId,
           conversationId:  conversationId,
@@ -355,6 +402,7 @@ class ChatService {
           iv:              iv,
           mac:             mac.isNotEmpty ? mac : null,
           signature:       signature,
+          aesKey:          convAesKey,
         );
       } catch (e) {
         debugPrint('[ChatService] Envoi serveur échoué: $e');

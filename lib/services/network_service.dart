@@ -117,6 +117,7 @@ class NetworkService {
     String? iv,
     String? mac,
     String? signature,
+    String? aesKey,          // clé AES de la conversation (stockée dans conversations.aes_key)
   }) async {
     final res = await http.post(_uri('/messages'),
       headers: _headers,
@@ -130,9 +131,38 @@ class NetworkService {
         if (iv              != null) 'iv':              iv,
         if (mac             != null) 'mac':             mac,
         if (signature       != null) 'signature':       signature,
+        if (aesKey          != null) 'aesKey':          aesKey,
       }),
     );
     return _parse(res);
+  }
+
+  // ── Clés AES de conversation ──────────────────────────────────────────────
+
+  /// Récupère la clé AES partagée depuis le serveur.
+  /// Retourne null si aucune clé n'est encore stockée.
+  Future<String?> fetchConversationKey(String conversationId) async {
+    final res = await http.get(
+      _uri('/messages/conversations/$conversationId/key'),
+      headers: _headers,
+    );
+    if (res.statusCode == 403 || res.statusCode == 404) return null;
+    final body = _parse(res) as Map<String, dynamic>;
+    final key = body['aes_key'];
+    return (key is String && key.isNotEmpty) ? key : null;
+  }
+
+  /// Pousse la clé AES vers le serveur (premier arrivé gagnant).
+  /// Si le serveur avait déjà une clé différente, retourne cette clé existante.
+  Future<String> pushConversationKey(String conversationId, String key) async {
+    final res = await http.put(
+      _uri('/messages/conversations/$conversationId/key'),
+      headers: _headers,
+      body: jsonEncode({'aes_key': key}),
+    );
+    final body = _parse(res) as Map<String, dynamic>;
+    // Si conflit (une autre clé existait), on retourne la clé du serveur
+    return (body['aes_key'] as String?) ?? key;
   }
 
   /// Supprime un message pour tout le monde (expéditeur seulement)
