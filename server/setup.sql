@@ -35,9 +35,11 @@ CREATE TABLE IF NOT EXISTS messages (
   type              VARCHAR(20)  NOT NULL DEFAULT 'text',  -- 'text'|'image'|'audio'|'video'|'file'
   file_name         VARCHAR(255),
   file_size         BIGINT,
-  encrypted_aes_key TEXT,   -- pour mode asym
+  encrypted_aes_key TEXT,   -- pour mode asym ET sym (clé AES chiffrée avec RSA du destinataire)
   iv                TEXT,
+  mac               TEXT,   -- tag d'authentification AES-GCM
   signature         TEXT,
+  read_at           TIMESTAMPTZ,  -- date de lecture par le destinataire
   timestamp         TIMESTAMPTZ DEFAULT NOW()
 );
 

@@ -299,6 +299,17 @@ class ChatService {
       cipherText = payload.cipherText;
       nonce      = payload.nonce;
       mac        = payload.mac;
+      iv         = nonce;
+
+      // Chiffre la clé AES avec la clé RSA publique du destinataire pour qu'il puisse déchiffrer
+      final receiverPubJson = (receiverData['rsaPublicKey'] ?? receiverData['public_key']) as String?;
+      if (receiverPubJson != null && receiverPubJson.isNotEmpty) {
+        try {
+          final receiverPubKey = RsaService.decodePublicKey(receiverPubJson);
+          final aesKeyBytes    = base64Decode(key);
+          encryptedAesKey = base64Encode(RsaService.encryptWithPublicKey(aesKeyBytes, receiverPubKey));
+        } catch (_) {}
+      }
     }
 
     final optimistic = ChatMessageModel.fromMap(msgId, {
@@ -341,7 +352,7 @@ class ChatService {
           fileName:        fileName,
           fileSize:        fileSize,
           encryptedAesKey: encryptedAesKey,
-          iv:              iv ?? nonce,
+          iv:              iv,
           mac:             mac.isNotEmpty ? mac : null,
           signature:       signature,
         );
@@ -504,11 +515,17 @@ class ChatService {
     }
 
     // Message chargé depuis le serveur → déchiffrement AES avec clé locale
-    final key = await getConversationKey(msg.conversationId) ?? '';
-    if (key.isEmpty) {
+    String? key = await getConversationKey(msg.conversationId);
+
+    // Clé absente localement : essayer de la dériver depuis encryptedAesKey (chiffrée avec notre RSA privé)
+    if ((key == null || key.isEmpty) && msg.encryptedAesKey.isNotEmpty) {
+      key = await _deriveSymmetricKey(msg.conversationId, msg.encryptedAesKey, currentUser);
+    }
+
+    if (key == null || key.isEmpty) {
       return currentUser?.id == msg.senderId
           ? '🔐 Message envoyé'
-          : '🔒 Message chiffré';
+          : '🔒 Message chiffré (clé manquante)';
     }
     try {
       return await CryptoAvance.decryptMessage(
@@ -522,6 +539,28 @@ class ChatService {
       return currentUser?.id == msg.senderId
           ? '🔐 Message envoyé'
           : '🔒 Message chiffré';
+    }
+  }
+
+  /// Tente de déchiffrer la clé AES via la clé RSA privée locale, puis la met en cache.
+  Future<String?> _deriveSymmetricKey(
+    String conversationId,
+    String encryptedAesKey,
+    LocalUser? currentUser,
+  ) async {
+    if (currentUser == null) return null;
+    try {
+      final prefs    = await SharedPreferences.getInstance();
+      final privJson = prefs.getString('rsa_priv_${currentUser.id}');
+      if (privJson == null) return null;
+      final privKey     = RsaService.decodePrivateKey(privJson);
+      final encBytes    = base64Decode(encryptedAesKey);
+      final aesKeyBytes = RsaService.decryptWithPrivateKey(encBytes, privKey);
+      final aesKeyStr   = base64Encode(aesKeyBytes);
+      await _setConversationKey(conversationId, aesKeyStr);
+      return aesKeyStr;
+    } catch (_) {
+      return null;
     }
   }
 

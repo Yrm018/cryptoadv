@@ -63,7 +63,7 @@ wss.on('connection', (ws, req) => {
       case 'auth': {
         try {
           const decoded = jwt.verify(msg.token, JWT_SECRET);
-          userId = decoded.id;
+          userId = String(decoded.id);
           clients.set(userId, ws);
           ws.send(JSON.stringify({ type: 'auth_ok', userId }));
           console.log(`[WS] Connected: ${userId}`);
