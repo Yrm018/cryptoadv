@@ -276,27 +276,125 @@ class ChatService {
       'senderPlainText': text,
     });
 
-    // 2. Envoi via WebSocket
-    if (_socket.isConnected) {
-      _socket.sendChatMessage(
-        receiverId:     receiverId,
-        conversationId: conversationId,
-        cipherText:     cipherText,
-        mode:           mode,
-        algorithm:      mode == 'asymmetric' ? 'rsa+aes-gcm' : algorithm,
-        type:           type,
-        fileName:       fileName,
-        fileSize:       fileSize,
-        encryptedAesKey: encryptedAesKey,
-        iv:             iv,
-        signature:      signature,
-      );
+    // 2. Persistance sur le serveur EC2 (indispensable pour la livraison hors-ligne)
+    //    Le serveur tentera une livraison WebSocket en temps réel si le destinataire
+    //    est connecté, sinon le message reste en DB jusqu'à sa prochaine connexion.
+    if (_network.isAuthenticated) {
+      try {
+        await _network.sendMessage(
+          id:             msgId,
+          conversationId: conversationId,
+          receiverId:     receiverId,
+          cipherText:     cipherText,
+          mode:           mode,
+          algorithm:      mode == 'asymmetric' ? 'rsa+aes-gcm' : algorithm,
+          type:           type,
+          fileName:       fileName,
+          fileSize:       fileSize,
+          encryptedAesKey: encryptedAesKey,
+          // Pour les messages symétriques, iv = nonce (le serveur stocke sous "iv")
+          iv:             iv ?? nonce,
+          signature:      signature,
+        );
+      } catch (e) {
+        // Échec réseau → le message est déjà en local, on continue sans planter
+        debugPrint('[ChatService] Envoi serveur échoué (sera réessayé plus tard): $e');
+      }
     }
 
     String preview = type == 'text' ? (mode == 'asymmetric' ? 'Chiffré RSA' : 'Chiffré') : 'Fichier chiffré ($fileName)';
     _updateConvPreview(conversationId, now, preview);
     _pushMessageUpdate(conversationId);
     _pushConversationUpdate();
+  }
+
+  // ── Synchronisation depuis le serveur ────────────────────────────────────
+
+  /// Appelé après le login pour récupérer les conversations et messages
+  /// manqués pendant que l'utilisateur était hors ligne.
+  Future<void> syncFromServer() async {
+    if (!_network.isAuthenticated) return;
+    try {
+      final conversations = await _network.getConversations();
+      for (final conv in conversations) {
+        final otherId    = conv['other_id']?.toString() ?? '';
+        final otherEmail = conv['other_email']?.toString() ?? '';
+        final otherName  = conv['other_username']?.toString() ?? otherEmail;
+
+        if (otherId.isEmpty) continue;
+
+        // Reconstruire la conversationId locale (même logique que _buildConversationId)
+        final currentUser = await _authService.currentUser;
+        if (currentUser == null) return;
+        final convId = _buildConversationId(currentUser.id, otherId);
+
+        // Créer la conversation localement si absente
+        if (!_db.conversations.containsKey(convId)) {
+          await _db.conversations.put(convId, {
+            'id':               convId,
+            'participants':      jsonEncode([currentUser.id, otherId]),
+            'participantEmails': jsonEncode([currentUser.email, otherEmail]),
+            'participantNames':  jsonEncode([currentUser.displayName, otherName]),
+            'lastMessageAt':     conv['created_at']?.toString() ?? DateTime.now().toIso8601String(),
+            'lastMessagePreview':'Conversation sécurisée',
+            'symmetricKey':      '',  // clé AES gérée localement
+          });
+        }
+
+        // Sauvegarder l'utilisateur distant en local pour l'UI
+        if (!_db.users.containsKey(otherId)) {
+          await _db.users.put(otherId, {
+            'id':          otherId,
+            'email':       otherEmail,
+            'username':    otherName,
+            'displayName': '${conv['first_name'] ?? ''} ${conv['last_name'] ?? ''}'.trim().isNotEmpty
+                             ? '${conv['first_name']} ${conv['last_name']}'
+                             : otherName,
+            'photoBase64': conv['photo_base64'],
+          });
+        }
+
+        // Récupérer les messages du serveur
+        try {
+          final msgs = await _network.getMessages(convId);
+          final box  = await _db.messagesBox(convId);
+          for (final m in msgs) {
+            final id = m['id']?.toString() ?? '';
+            if (id.isEmpty || box.containsKey(id)) continue;
+            // Mapper les champs snake_case du serveur
+            await box.put(id, {
+              'id':             id,
+              'conversationId': convId,
+              'senderId':       m['sender_id']?.toString() ?? '',
+              'senderEmail':    '',
+              'senderName':     '',
+              'receiverId':     otherId,
+              'receiverEmail':  otherEmail,
+              'receiverName':   otherName,
+              'encryptionMode': m['mode'] ?? 'symmetric',
+              'cipherText':     m['cipher_text'] ?? '',
+              'nonce':          m['iv'] ?? '',
+              'mac':            '',
+              'algorithm':      m['algorithm'] ?? 'aes-gcm',
+              'encryptedAesKey': m['encrypted_aes_key'],
+              'signature':      m['signature'],
+              'iv':             m['iv'],
+              'createdAt':      m['timestamp']?.toString() ?? DateTime.now().toIso8601String(),
+              'type':           m['type'] ?? 'text',
+              'fileName':       m['file_name'],
+              'fileSize':       m['file_size'],
+              'senderPlainText': '',
+            });
+          }
+          if (msgs.isNotEmpty) _pushMessageUpdate(convId);
+        } catch (e) {
+          debugPrint('[ChatService] syncMessages $convId: $e');
+        }
+      }
+      _pushConversationUpdate();
+    } catch (e) {
+      debugPrint('[ChatService] syncFromServer: $e');
+    }
   }
 
   /// Sauvegarde un message reçu depuis le WebSocket/Network dans Hive

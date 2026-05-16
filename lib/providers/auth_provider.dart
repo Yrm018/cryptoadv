@@ -1,7 +1,11 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
+import '../services/chat_service.dart';
 import '../services/network_service.dart';
 import '../services/socket_service.dart';
+
+const _kSavedToken = 'saved_jwt_token';
 
 /// AuthProvider — expose l'utilisateur connecté à toute l'application.
 class AuthProvider extends ChangeNotifier {
@@ -24,9 +28,24 @@ class AuthProvider extends ChangeNotifier {
     _init();
   }
 
-  /// Charge l'utilisateur depuis la session sauvegardée et connecte le socket.
+  /// Charge l'utilisateur et le token JWT depuis la session sauvegardée.
   Future<void> _init() async {
     _currentUser = await _authService.currentUser;
+
+    // Restaurer le token JWT et reconnecter le socket si l'utilisateur est connu
+    if (_currentUser != null) {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString(_kSavedToken);
+      if (token != null) {
+        _network.setToken(token);
+        await _socket.connect(token);
+        // Récupérer les messages manqués pendant la déconnexion
+        ChatService.instance.syncFromServer().catchError(
+          (e) => debugPrint('[AuthProvider] sync init échoué: $e'),
+        );
+      }
+    }
+
     _isLoading = false;
     notifyListeners();
   }
@@ -46,12 +65,24 @@ class AuthProvider extends ChangeNotifier {
     final Map? userMap = response['user'];
 
     if (token != null && userMap != null) {
-      // IMPORTANT : Enregistrer le token pour les futurs appels API (recherche, messages, etc.)
+      // Persister le token JWT pour la reconnexion après rechargement de page
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kSavedToken, token);
+
       _network.setToken(token);
-      
-      _currentUser = LocalUser.fromMap(userMap);
+
+      // Sauvegarder la session localement (SharedPreferences + Hive)
+      // afin que ChatService.currentUser puisse retrouver l'utilisateur.
+      await _authService.saveServerSession(Map<String, dynamic>.from(userMap!));
+
+      _currentUser = LocalUser.fromMap(userMap!);
       await _socket.connect(token);
       notifyListeners();
+
+      // Synchroniser les conversations et messages manqués depuis le serveur
+      ChatService.instance.syncFromServer().catchError(
+        (e) => debugPrint('[AuthProvider] sync échoué: $e'),
+      );
     }
   }
 
@@ -125,6 +156,8 @@ class AuthProvider extends ChangeNotifier {
   Future<void> signOut() async {
     await _socket.disconnect();
     _network.clearToken();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kSavedToken);
     await _authService.signOut();
     _currentUser = null;
     notifyListeners();

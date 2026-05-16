@@ -38,10 +38,10 @@ class LocalUser {
     final username = (map['username'] ?? map['user_name'] ?? email).toString();
     final fName = (map['firstName'] ?? map['first_name'] ?? '').toString();
     final lName = (map['lastName'] ?? map['last_name'] ?? '').toString();
-    
+
     String dName = (map['displayName'] ?? map['display_name'] ?? '').toString();
     if (dName.isEmpty) {
-      dName = "$fName $lName".trim();
+      dName = '$fName $lName'.trim();
     }
     if (dName.isEmpty) dName = username;
 
@@ -298,6 +298,44 @@ class AuthService {
 
   Future<void> signOut() async => _clearSession();
 
+  // ── saveServerSession ─────────────────────────────────────────────────────
+  /// Sauvegarde une session utilisateur provenant du serveur (login EC2).
+  /// Mappe les champs snake_case du serveur vers le format local camelCase,
+  /// puis persiste dans Hive et SharedPreferences.
+  Future<void> saveServerSession(Map<String, dynamic> serverUser) async {
+    final userId = serverUser['id']?.toString() ?? '';
+    if (userId.isEmpty) return;
+
+    final firstName = (serverUser['first_name'] ?? serverUser['firstName'] ?? '').toString();
+    final lastName  = (serverUser['last_name']  ?? serverUser['lastName']  ?? '').toString();
+    String displayName = '$firstName $lastName'.trim();
+    if (displayName.isEmpty) {
+      displayName = (serverUser['username'] ?? '').toString();
+    }
+
+    final normalized = <String, dynamic>{
+      'id':          userId,
+      'email':       (serverUser['email']    ?? '').toString(),
+      'username':    (serverUser['username'] ?? '').toString(),
+      'firstName':   firstName,
+      'lastName':    lastName,
+      'displayName': displayName,
+      'createdAt':   serverUser['created_at']?.toString()
+                     ?? serverUser['createdAt']?.toString()
+                     ?? DateTime.now().toIso8601String(),
+    };
+
+    // Préserver la photo si elle existait déjà localement
+    final existing = _db.users.get(userId);
+    if (existing != null && existing['photoBase64'] != null) {
+      normalized['photoBase64'] = existing['photoBase64'];
+    }
+
+    await _db.users.put(userId, normalized);
+    await _saveSession(userId);
+  }
+
+  // ── Session ───────────────────────────────────────────────────────────────
   Future<void> _saveSession(String userId) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kCurrentUserId, userId);

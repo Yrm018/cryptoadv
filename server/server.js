@@ -8,7 +8,6 @@ const path      = require('path');
 
 const authRoutes     = require('./routes/auth');
 const usersRoutes    = require('./routes/users');
-const messagesRoutes = require('./routes/messages');
 
 const PORT       = process.env.PORT       || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'cryptoadv_secret_change_me';
@@ -18,11 +17,24 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// ── Map userId → WebSocket (déclaré ici pour être partagé avec les routes) ────
+const clients = new Map();
+
+function sendTo(userId, payload) {
+  const ws = clients.get(String(userId));
+  if (ws && ws.readyState === 1 /* OPEN */) {
+    ws.send(JSON.stringify(payload));
+    return true;
+  }
+  return false;
+}
+
 // ── API Routes ────────────────────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', ts: new Date() }));
 app.use('/auth',     authRoutes);
 app.use('/users',    usersRoutes);
-app.use('/messages', messagesRoutes);
+// On passe sendTo aux routes messages pour la livraison en temps réel
+app.use('/messages', require('./routes/messages')(sendTo));
 
 // ── Servir le Frontend Flutter Web ────────────────────────────────────────────
 // On sert les fichiers statiques du dossier "public" (build/web)
@@ -38,18 +50,6 @@ const server = http.createServer(app);
 
 // ── WebSocket server ──────────────────────────────────────────────────────────
 const wss = new WebSocket.Server({ server, path: '/ws' });
-
-// Map userId → WebSocket client
-const clients = new Map();
-
-function sendTo(userId, payload) {
-  const ws = clients.get(userId);
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(payload));
-    return true;
-  }
-  return false;
-}
 
 wss.on('connection', (ws, req) => {
   let userId = null;
