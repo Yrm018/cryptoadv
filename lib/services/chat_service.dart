@@ -413,6 +413,12 @@ class ChatService {
     _pushCachedMessages(conversationId);
     _updateConversationPreview(conversationId, now, type);
 
+    // Mise en cache du texte clair pour l'expéditeur (survit aux rechargements)
+    if (type == 'text') {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('msg_plain_$msgId', text);
+    }
+
     if (_network.isAuthenticated) {
       try {
         // Pour le mode symétrique, on inclut la clé AES dans le POST messages.
@@ -583,16 +589,21 @@ class ChatService {
   // ── Déchiffrement ─────────────────────────────────────────────────────────
 
   Future<String> decryptMessage(ChatMessageModel msg) async {
-    if (msg.encryptionMode == 'asymmetric') return _decryptAsymmetric(msg);
-
     final currentUser = await _authService.currentUser;
 
-    // Message optimiste (envoyé dans cette session) : texte clair dispo
+    // 1. Texte clair optimiste (envoyé dans cette session)
     if (currentUser != null &&
         msg.senderId == currentUser.id &&
         msg.senderPlainText.isNotEmpty) {
       return msg.senderPlainText;
     }
+
+    // 2. Texte clair mis en cache localement à l'envoi (survit aux rechargements)
+    final prefs = await SharedPreferences.getInstance();
+    final cached = prefs.getString('msg_plain_${msg.id}');
+    if (cached != null && cached.isNotEmpty) return cached;
+
+    if (msg.encryptionMode == 'asymmetric') return _decryptAsymmetric(msg);
 
     // Message chargé depuis le serveur → déchiffrement AES avec clé locale
     String? key = await getConversationKey(msg.conversationId);
