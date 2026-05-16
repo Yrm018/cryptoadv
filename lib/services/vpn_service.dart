@@ -10,6 +10,7 @@ import '../services/network_service.dart';
 import '../backend/crypto/cryptavance.dart';
 import '../backend/security/rsa_service.dart';
 import '../backend/security/pki_service.dart';
+import '../backend/security/keygen.dart';
 import '../models/vpn_message_model.dart';
 import '../models/certificate_model.dart';
 
@@ -56,8 +57,9 @@ class VpnService {
   Future<void> generateAndRegisterKeys() async {
     final user = await _getUser();
 
-    // Génération RSA dans un isolate (évite de bloquer l'UI)
-    final keys = await compute(generateKeyPairIsolated, 2048);
+    // Web → window.crypto.subtle (non-bloquant, ~100ms)
+    // Native → compute() dans un isolate séparé
+    final keys = await generateKeyPairPlatform();
     final pubJson  = keys['pub']!;
     final privJson = keys['priv']!;
 
