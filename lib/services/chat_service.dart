@@ -25,6 +25,11 @@ class ChatService {
   final Map<String, String>                 _userPhotoCache     = {};
   final Map<String, Map<String, dynamic>>   _userDataCache      = {};
 
+  /// Cache mémoire des clés AES (une entrée par conversation, par session).
+  /// Le serveur est autoritaire : on l'interroge une fois par conversation
+  /// et on met en cache le résultat pour éviter un aller-retour à chaque message.
+  final Map<String, String> _keyCache = {};
+
   final Map<String, StreamController<List<ChatMessageModel>>> _msgControllers = {};
   final _convController = StreamController<List<Map<String, dynamic>>>.broadcast();
 
@@ -51,47 +56,74 @@ class ChatService {
   }
 
   /// Retourne la clé AES de la conversation.
-  /// Priorité : cache local (SharedPreferences) → serveur PostgreSQL.
-  /// Quand la clé vient du serveur, elle est mise en cache localement.
+  ///
+  /// Stratégie (le serveur est autoritaire) :
+  /// 1. Cache mémoire → réponse immédiate sans réseau (déjà résolu cette session)
+  /// 2. Serveur PostgreSQL → source de vérité partagée entre tous les appareils
+  /// 3. SharedPreferences → fallback offline / anciennes conversations
+  ///
+  /// Si une clé locale existe mais que le serveur n'en a pas encore,
+  /// on pousse la clé locale au serveur (migration des anciennes convs).
   Future<String?> getConversationKey(String convId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final local = prefs.getString('aes_conv_$convId');
-    if (local != null && local.isNotEmpty) return local;
+    // 1. Cache mémoire (déjà résolu cette session → pas de réseau)
+    final cached = _keyCache[convId];
+    if (cached != null && cached.isNotEmpty) return cached;
 
-    // Pas de clé locale → on demande au serveur
+    final prefs = await SharedPreferences.getInstance();
+
+    // 2. Serveur (autoritaire — synchronise tous les appareils)
     if (_network.isAuthenticated) {
       try {
         final serverKey = await _network.fetchConversationKey(convId);
         if (serverKey != null && serverKey.isNotEmpty) {
+          // Adopter la clé du serveur, mettre à jour local + mémoire
+          _keyCache[convId] = serverKey;
           await prefs.setString('aes_conv_$convId', serverKey);
           return serverKey;
         }
       } catch (e) {
-        debugPrint('[ChatService] getConversationKey (server): $e');
+        debugPrint('[ChatService] getConversationKey server: $e');
       }
     }
+
+    // 3. Fallback local (offline ou serveur sans clé)
+    final local = prefs.getString('aes_conv_$convId');
+    if (local != null && local.isNotEmpty) {
+      _keyCache[convId] = local;
+      // Migrer l'ancienne clé locale vers le serveur (fire-and-forget)
+      if (_network.isAuthenticated) {
+        _network.pushConversationKey(convId, local).then((confirmed) {
+          if (confirmed != local) {
+            // Conflit : le serveur avait déjà une autre clé → adopter celle du serveur
+            _keyCache[convId] = confirmed;
+            prefs.setString('aes_conv_$convId', confirmed);
+            debugPrint('[ChatService] Clé serveur adoptée (migration conflit) pour $convId');
+          }
+        }).catchError((_) {});
+      }
+      return local;
+    }
+
     return null;
   }
 
-  /// Stocke la clé AES localement ET la pousse vers le serveur (best-effort).
-  /// Si le serveur retourne une clé différente (conflit), on adopte la clé du serveur
-  /// pour rester cohérent avec l'autre appareil.
+  /// Stocke la clé AES en mémoire, en local ET sur le serveur.
+  /// Si le serveur retourne une clé différente (conflit), on l'adopte.
   Future<void> _setConversationKey(String convId, String key) async {
+    _keyCache[convId] = key;
     final prefs = await SharedPreferences.getInstance();
-    // Stocker localement d'abord (réponse immédiate)
     await prefs.setString('aes_conv_$convId', key);
 
     if (_network.isAuthenticated) {
       try {
-        final confirmedKey = await _network.pushConversationKey(convId, key);
-        // Si le serveur avait déjà une autre clé (conflit), on l'adopte
-        if (confirmedKey != key) {
-          await prefs.setString('aes_conv_$convId', confirmedKey);
-          debugPrint('[ChatService] Clé AES adoptée depuis le serveur (conflit résolu) pour $convId');
+        final confirmed = await _network.pushConversationKey(convId, key);
+        if (confirmed != key) {
+          _keyCache[convId] = confirmed;
+          await prefs.setString('aes_conv_$convId', confirmed);
+          debugPrint('[ChatService] Clé serveur adoptée (conflit) pour $convId');
         }
       } catch (e) {
-        debugPrint('[ChatService] _setConversationKey (server push): $e');
-        // En cas d'échec réseau, la clé locale reste valide pour cette session
+        debugPrint('[ChatService] _setConversationKey push: $e');
       }
     }
   }

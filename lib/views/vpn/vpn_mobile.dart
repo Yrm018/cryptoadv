@@ -49,15 +49,19 @@ class _VpnMobileState extends State<VpnMobile> with SingleTickerProviderStateMix
   }
 
   Future<void> _loadPkiStatus() async {
-    final has = await _vpnService.hasKeys();
-    if (mounted) setState(() => _hasKeys = has);
-    if (has) _loadCertificate();
+    try {
+      final has = await _vpnService.hasKeys();
+      if (mounted) setState(() => _hasKeys = has);
+      if (has) _loadCertificate();
+    } catch (_) {}
   }
 
   Future<void> _loadCertificate() async {
-    final cert = await _vpnService.getMyCertificate();
-    final pub  = await _vpnService.getMyPublicKey();
-    if (mounted) setState(() { _myCert = cert; _myPublicKey = pub; });
+    try {
+      final cert = await _vpnService.getMyCertificate();
+      final pub  = await _vpnService.getMyPublicKey();
+      if (mounted) setState(() { _myCert = cert; _myPublicKey = pub; });
+    } catch (_) {}
   }
 
   Future<void> _generateKeys(AppL10n l) async {
