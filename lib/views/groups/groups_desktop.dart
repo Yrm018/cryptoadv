@@ -462,11 +462,60 @@ class _GroupsDesktopState extends State<GroupsDesktop> {
     );
   }
 
+  void _showDeleteMenu(ChatMessageModel msg, bool isMe) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E2E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (_) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 8),
+          Container(width: 36, height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 12),
+          if (isMe)
+            ListTile(
+              leading: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent),
+              title: const Text('Supprimer pour tout le monde',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(context);
+                try {
+                  await _groupService.deleteGroupMessageForEveryone(
+                      _activeGroupId!, msg.id);
+                } catch (e) {
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Erreur : $e'),
+                        backgroundColor: Colors.redAccent));
+                }
+              },
+            ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline_rounded, color: Colors.orange),
+            title: const Text('Supprimer pour moi',
+                style: TextStyle(color: Colors.white)),
+            onTap: () async {
+              Navigator.pop(context);
+              await _groupService.deleteGroupMessageForMe(_activeGroupId!, msg.id);
+            },
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
   Widget _msgBubble(ChatMessageModel msg) {
     final isMe = msg.senderId == _currentUser?.id;
     final senderName = msg.senderName.isNotEmpty ? msg.senderName : msg.senderEmail;
 
-    return Padding(
+    return GestureDetector(
+      onLongPress: () => _showDeleteMenu(msg, isMe),
+      child: Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -559,6 +608,7 @@ class _GroupsDesktopState extends State<GroupsDesktop> {
             ),
           ],
         ],
+        ),
       ),
     );
   }

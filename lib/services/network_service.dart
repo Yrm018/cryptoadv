@@ -314,6 +314,20 @@ class NetworkService {
     return (body['aes_key'] as String?) ?? key;
   }
 
+  Future<void> deleteGroupMessage(String groupId, String messageId) async {
+    final res = await http.delete(
+      _uri('/groups/$groupId/messages/$messageId'),
+      headers: _headers,
+    );
+    if (res.statusCode >= 400) {
+      final body = jsonDecode(utf8.decode(res.bodyBytes));
+      throw NetworkException(
+        statusCode: res.statusCode,
+        message: (body is Map && body['error'] != null) ? body['error'] : 'Erreur',
+      );
+    }
+  }
+
   Future<void> deleteGroup(String groupId) async {
     final res = await http.delete(_uri('/groups/$groupId'), headers: _headers);
     if (res.statusCode >= 400) {

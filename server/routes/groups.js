@@ -17,13 +17,15 @@ module.exports = function groupsRouter(sendTo) {
 
       await client.query(
         `INSERT INTO groups (id, name, description, photo_base64, created_by)
-         VALUES ($1, $2, $3, $4, $5)`,
+         VALUES ($1, $2, $3, $4, $5::uuid)`,
         [groupId, name, description || null, photoBase64 || null, req.user.id]
       );
 
       // Ajouter le créateur comme admin
       await client.query(
-        `INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'admin')`,
+        `INSERT INTO group_members (group_id, user_id, role)
+         VALUES ($1, $2::uuid, 'admin')
+         ON CONFLICT (group_id, user_id) DO NOTHING`,
         [groupId, req.user.id]
       );
 
@@ -32,8 +34,9 @@ module.exports = function groupsRouter(sendTo) {
         if (String(uid) === String(req.user.id)) continue;
         await client.query(
           `INSERT INTO group_members (group_id, user_id, role)
-           VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING`,
-          [groupId, uid]
+           VALUES ($1, $2::uuid, 'member')
+           ON CONFLICT (group_id, user_id) DO NOTHING`,
+          [groupId, String(uid)]
         );
       }
 
@@ -50,7 +53,7 @@ module.exports = function groupsRouter(sendTo) {
       res.status(201).json({ id: groupId, name, description });
     } catch (err) {
       await client.query('ROLLBACK');
-      console.error(err); res.status(500).json({ error: 'Erreur serveur' });
+      console.error('[GROUPS ERROR]', err.message || err); res.status(500).json({ error: 'Erreur serveur' });
     } finally {
       client.release();
     }
@@ -76,7 +79,7 @@ module.exports = function groupsRouter(sendTo) {
       );
       res.json(rows);
     } catch (err) {
-      console.error(err); res.status(500).json({ error: 'Erreur serveur' });
+      console.error('[GROUPS ERROR]', err.message || err); res.status(500).json({ error: 'Erreur serveur' });
     }
   });
 
@@ -93,7 +96,7 @@ module.exports = function groupsRouter(sendTo) {
       if (!rows.length) return res.status(403).json({ error: 'Accès refusé' });
       res.json(rows[0]);
     } catch (err) {
-      console.error(err); res.status(500).json({ error: 'Erreur serveur' });
+      console.error('[GROUPS ERROR]', err.message || err); res.status(500).json({ error: 'Erreur serveur' });
     }
   });
 
@@ -110,7 +113,7 @@ module.exports = function groupsRouter(sendTo) {
       if (!rows.length) return res.status(403).json({ error: 'Accès refusé' });
       res.json({ aes_key: rows[0].aes_key || null });
     } catch (err) {
-      console.error(err); res.status(500).json({ error: 'Erreur serveur' });
+      console.error('[GROUPS ERROR]', err.message || err); res.status(500).json({ error: 'Erreur serveur' });
     }
   });
 
@@ -143,7 +146,7 @@ module.exports = function groupsRouter(sendTo) {
       }
       res.json({ aes_key: rows[0].aes_key });
     } catch (err) {
-      console.error(err); res.status(500).json({ error: 'Erreur serveur' });
+      console.error('[GROUPS ERROR]', err.message || err); res.status(500).json({ error: 'Erreur serveur' });
     }
   });
 
@@ -170,7 +173,7 @@ module.exports = function groupsRouter(sendTo) {
       );
       res.json(rows);
     } catch (err) {
-      console.error(err); res.status(500).json({ error: 'Erreur serveur' });
+      console.error('[GROUPS ERROR]', err.message || err); res.status(500).json({ error: 'Erreur serveur' });
     }
   });
 
@@ -203,7 +206,7 @@ module.exports = function groupsRouter(sendTo) {
 
       res.json({ added: true });
     } catch (err) {
-      console.error(err); res.status(500).json({ error: 'Erreur serveur' });
+      console.error('[GROUPS ERROR]', err.message || err); res.status(500).json({ error: 'Erreur serveur' });
     }
   });
 
@@ -230,7 +233,7 @@ module.exports = function groupsRouter(sendTo) {
       sendTo(String(userId), { type: 'group_removed', groupId });
       res.json({ removed: true });
     } catch (err) {
-      console.error(err); res.status(500).json({ error: 'Erreur serveur' });
+      console.error('[GROUPS ERROR]', err.message || err); res.status(500).json({ error: 'Erreur serveur' });
     }
   });
 
@@ -257,7 +260,7 @@ module.exports = function groupsRouter(sendTo) {
       );
       res.json(rows);
     } catch (err) {
-      console.error(err); res.status(500).json({ error: 'Erreur serveur' });
+      console.error('[GROUPS ERROR]', err.message || err); res.status(500).json({ error: 'Erreur serveur' });
     }
   });
 
@@ -316,7 +319,38 @@ module.exports = function groupsRouter(sendTo) {
 
       res.status(201).json(saved || { id: msgId });
     } catch (err) {
-      console.error(err); res.status(500).json({ error: 'Erreur serveur' });
+      console.error('[GROUPS ERROR]', err.message || err); res.status(500).json({ error: 'Erreur serveur' });
+    }
+  });
+
+  // ── DELETE /groups/:groupId/messages/:msgId ──────────────────────────────────
+  // Supprime un message pour tout le monde (expéditeur seulement)
+  router.delete('/:groupId/messages/:msgId', requireAuth, async (req, res) => {
+    const { groupId, msgId } = req.params;
+    try {
+      const { rows } = await pool.query(
+        `DELETE FROM group_messages
+         WHERE id = $1 AND group_id = $2 AND sender_id = $3::uuid
+         RETURNING id`,
+        [msgId, groupId, req.user.id]
+      );
+      if (!rows.length) return res.status(403).json({ error: 'Non autorisé' });
+
+      // Notifier tous les membres en ligne
+      const { rows: members } = await pool.query(
+        `SELECT user_id FROM group_members WHERE group_id = $1 AND user_id != $2::uuid`,
+        [groupId, req.user.id]
+      );
+      for (const m of members) {
+        sendTo(String(m.user_id), {
+          type: 'group_message_deleted', messageId: msgId, groupId,
+        });
+      }
+
+      res.json({ deleted: true });
+    } catch (err) {
+      console.error('[GROUPS ERROR]', err.message || err);
+      res.status(500).json({ error: 'Erreur serveur' });
     }
   });
 
@@ -349,7 +383,7 @@ module.exports = function groupsRouter(sendTo) {
 
       res.json({ deleted: true });
     } catch (err) {
-      console.error(err); res.status(500).json({ error: 'Erreur serveur' });
+      console.error('[GROUPS ERROR]', err.message || err); res.status(500).json({ error: 'Erreur serveur' });
     }
   });
 

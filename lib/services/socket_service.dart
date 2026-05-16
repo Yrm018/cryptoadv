@@ -34,6 +34,7 @@ class SocketService extends ChangeNotifier {
   void Function(Map<String, dynamic>)? onGroupAdded;
   void Function(Map<String, dynamic>)? onGroupRemoved;
   void Function(Map<String, dynamic>)? onGroupDeleted;
+  void Function(Map<String, dynamic>)? onGroupMessageDeleted;
 
   bool get isConnected => _connected;
 
@@ -171,6 +172,9 @@ class SocketService extends ChangeNotifier {
         break;
       case 'group_message':
         onGroupMessage?.call(msg);
+        break;
+      case 'group_message_deleted':
+        onGroupMessageDeleted?.call(msg);
         break;
       case 'group_created':
         onGroupCreated?.call(msg);

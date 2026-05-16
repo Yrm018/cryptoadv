@@ -226,6 +226,28 @@ class GroupService {
     _membersCache.remove(groupId);
   }
 
+  /// Supprime un message pour tout le monde (expéditeur uniquement)
+  Future<void> deleteGroupMessageForEveryone(String groupId, String messageId) async {
+    await _network.deleteGroupMessage(groupId, messageId);
+    _removeFromCache(groupId, messageId);
+  }
+
+  /// Supprime un message localement seulement (pour moi)
+  Future<void> deleteGroupMessageForMe(String groupId, String messageId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final hidden = prefs.getStringList('hidden_grp_msgs') ?? [];
+    if (!hidden.contains(messageId)) {
+      hidden.add(messageId);
+      await prefs.setStringList('hidden_grp_msgs', hidden);
+    }
+    _removeFromCache(groupId, messageId);
+  }
+
+  void _removeFromCache(String groupId, String messageId) {
+    _msgCache[groupId]?.removeWhere((m) => m.id == messageId);
+    _pushMessages(groupId);
+  }
+
   Future<void> deleteGroup(String groupId) async {
     await _network.deleteGroup(groupId);
     _msgCache.remove(groupId);
@@ -419,6 +441,12 @@ class GroupService {
   // ── WebSocket — réception temps réel ─────────────────────────────────────
 
   void listenToGroupEvents() {
+    _socket.onGroupMessageDeleted = (data) {
+      final groupId   = data['groupId']   as String?;
+      final messageId = data['messageId'] as String?;
+      if (groupId != null && messageId != null) _removeFromCache(groupId, messageId);
+    };
+
     _socket.onGroupMessage = (data) async {
       final groupId = data['groupId'] as String?;
       if (groupId == null) return;
