@@ -339,6 +339,19 @@ class NetworkService {
     }
   }
 
+  // ── Présence ──────────────────────────────────────────────────────────────
+
+  /// Retourne la liste des userIds (parmi ceux fournis) actuellement en ligne.
+  Future<List<String>> fetchPresence(List<String> userIds) async {
+    if (userIds.isEmpty) return [];
+    final ids = userIds.join(',');
+    final res = await http.get(_uri('/presence?ids=$ids'), headers: _headers);
+    if (res.statusCode != 200) return [];
+    final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    final online = body['online'];
+    return (online is List) ? online.map((e) => e.toString()).toList() : [];
+  }
+
   // ── Santé du serveur ──────────────────────────────────────────────────────
 
   Future<bool> isServerReachable() async {

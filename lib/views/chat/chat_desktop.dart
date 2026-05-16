@@ -11,6 +11,7 @@ import '../../components/backround.dart';
 import '../../core/localization/app_l10n.dart';
 import '../../services/chat_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/presence_service.dart';
 import '../../widgets/common/app_navbar.dart';
 import '../../models/chat_message_model.dart';
 import '../../widgets/common/user_avatar.dart';
@@ -45,11 +46,14 @@ class _ChatDesktopState extends State<ChatDesktop> {
   late AudioRecorder audioRecorder;
   bool _isRecording = false;
 
+  final _presence = PresenceService.instance;
+
   @override
   void initState() {
     super.initState();
     audioRecorder = AudioRecorder();
     _loadUser();
+    _presence.startListening();
   }
 
   Future<void> _loadUser() async {
@@ -417,6 +421,14 @@ class _ChatDesktopState extends State<ChatDesktop> {
                 return const Center(child: CircularProgressIndicator());
               }
               final convs = snap.data!;
+              // Récupère la présence initiale pour tous les contacts
+              final ids = convs
+                  .map((c) => c['otherUserId'] as String? ?? '')
+                  .where((id) => id.isNotEmpty)
+                  .toList();
+              if (ids.isNotEmpty) {
+                Future.microtask(() => _presence.fetchPresence(ids));
+              }
               return ListView.builder(
                 itemCount: convs.length,
                 itemBuilder: (context, i) => _convTile(convs[i], isDark),
@@ -427,35 +439,64 @@ class _ChatDesktopState extends State<ChatDesktop> {
       );
 
   Widget _convTile(Map<String, dynamic> conv, bool isDark) {
-    final id = conv['conversationId'];
-    final active = activeConversationId == id;
+    final id      = conv['conversationId'];
+    final active  = activeConversationId == id;
     final otherId = conv['otherUserId'] as String? ?? '';
-    final photo = otherId.isNotEmpty ? _chatService.getUserPhoto(otherId) : null;
+    final photo   = otherId.isNotEmpty ? _chatService.getUserPhoto(otherId) : null;
     final nameStr = conv['email'] as String? ?? '';
-    return ListTile(
-      selected: active,
-      selectedTileColor: Colors.white.withOpacity(0.05),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      leading: UserAvatar(
-        photoBase64: photo,
-        initial: nameStr,
-        radius: 18,
-        backgroundColor: active ? Colors.blue : Colors.grey,
-      ),
-      title: Text(conv['email'],
-          style: const TextStyle(color: Colors.white, fontSize: 13),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis),
-      subtitle: Text(conv['lastMessage'] ?? '',
-          style: const TextStyle(color: Colors.white38, fontSize: 11),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis),
-      onTap: () async {
-        setState(() {
-          activeConversationId = id;
-          emailController.text = conv['email'];
-        });
-        await _checkReceiverRsa(conv['email'] as String);
+
+    return AnimatedBuilder(
+      animation: _presence,
+      builder: (_, __) {
+        final online = otherId.isNotEmpty && _presence.isOnline(otherId);
+        return ListTile(
+          selected: active,
+          selectedTileColor: Colors.white.withOpacity(0.05),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          leading: Stack(clipBehavior: Clip.none, children: [
+            UserAvatar(
+              photoBase64: photo,
+              initial: nameStr,
+              radius: 18,
+              backgroundColor: active ? Colors.blue : Colors.grey,
+            ),
+            if (online)
+              Positioned(
+                bottom: 0, right: 0,
+                child: Container(
+                  width: 11, height: 11,
+                  decoration: BoxDecoration(
+                    color: Colors.greenAccent,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFF0D1B3E), width: 2),
+                  ),
+                ),
+              ),
+          ]),
+          title: Text(nameStr,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Row(children: [
+            if (online)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: Text('● En ligne',
+                    style: const TextStyle(color: Colors.greenAccent, fontSize: 10)),
+              ),
+            Expanded(
+              child: Text(conv['lastMessage'] ?? '',
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          ]),
+          onTap: () async {
+            setState(() {
+              activeConversationId = id;
+              emailController.text = nameStr;
+            });
+            await _checkReceiverRsa(nameStr);
+          },
+        );
       },
     );
   }
@@ -473,7 +514,18 @@ class _ChatDesktopState extends State<ChatDesktop> {
         ]),
       );
 
-  Widget _chatHeader(bool isDark, AppL10n l) => Container(
+  Widget _chatHeader(bool isDark, AppL10n l) {
+    // Récupère l'ID de l'autre utilisateur dans la conversation active
+    String? activeOtherId;
+    if (activeConversationId != null) {
+      // conversationId = "uid1_uid2", on extrait l'autre uid
+      final parts = activeConversationId!.split('_');
+      final myId  = _currentUser?.id ?? '';
+      activeOtherId = parts.firstWhere((p) => p != myId, orElse: () => '');
+      if (activeOtherId!.isEmpty) activeOtherId = null;
+    }
+
+    return Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: const BoxDecoration(
           border: Border(bottom: BorderSide(color: Colors.white10)),
@@ -482,9 +534,35 @@ class _ChatDesktopState extends State<ChatDesktop> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(children: [
-              Text(l.t('chat_encrypted_title'),
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(l.t('chat_encrypted_title'),
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold)),
+                if (activeOtherId != null)
+                  AnimatedBuilder(
+                    animation: _presence,
+                    builder: (_, __) {
+                      final online = _presence.isOnline(activeOtherId!);
+                      return Row(children: [
+                        Container(
+                          width: 7, height: 7,
+                          margin: const EdgeInsets.only(right: 4),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: online ? Colors.greenAccent : Colors.white24,
+                          ),
+                        ),
+                        Text(
+                          online ? 'En ligne' : 'Hors ligne',
+                          style: TextStyle(
+                            color: online ? Colors.greenAccent : Colors.white38,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ]);
+                    },
+                  ),
+              ]),
               const Spacer(),
               _modeToggle(isDark, l),
             ]),
@@ -502,6 +580,7 @@ class _ChatDesktopState extends State<ChatDesktop> {
           ],
         ),
       );
+  }
 
   Widget _modeToggle(bool isDark, AppL10n l) {
     return Container(

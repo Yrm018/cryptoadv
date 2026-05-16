@@ -36,6 +36,10 @@ class SocketService extends ChangeNotifier {
   void Function(Map<String, dynamic>)? onGroupDeleted;
   void Function(Map<String, dynamic>)? onGroupMessageDeleted;
 
+  // Présence
+  void Function(String userId)? onUserOnline;
+  void Function(String userId)? onUserOffline;
+
   bool get isConnected => _connected;
 
   // ── Connexion ─────────────────────────────────────────────────────────────
@@ -175,6 +179,12 @@ class SocketService extends ChangeNotifier {
         break;
       case 'group_message_deleted':
         onGroupMessageDeleted?.call(msg);
+        break;
+      case 'user_online':
+        if (msg['userId'] != null) onUserOnline?.call(msg['userId'] as String);
+        break;
+      case 'user_offline':
+        if (msg['userId'] != null) onUserOffline?.call(msg['userId'] as String);
         break;
       case 'group_created':
         onGroupCreated?.call(msg);

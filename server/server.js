@@ -8,6 +8,7 @@ const path      = require('path');
 
 const authRoutes     = require('./routes/auth');
 const usersRoutes    = require('./routes/users');
+const pool           = require('./db');
 
 const PORT       = process.env.PORT       || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'cryptoadv_secret_change_me';
@@ -29,8 +30,44 @@ function sendTo(userId, payload) {
   return false;
 }
 
+/// Récupère tous les contacts d'un utilisateur (partenaires de conv + membres de groupe)
+async function getContacts(userId) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT DISTINCT
+         CASE WHEN c.user1_id = $1 THEN c.user2_id ELSE c.user1_id END AS contact_id
+       FROM conversations c
+       WHERE c.user1_id = $1 OR c.user2_id = $1
+       UNION
+       SELECT DISTINCT gm2.user_id AS contact_id
+       FROM group_members gm1
+       JOIN group_members gm2 ON gm1.group_id = gm2.group_id AND gm2.user_id != $1
+       WHERE gm1.user_id = $1`,
+      [userId]
+    );
+    return rows.map(r => String(r.contact_id));
+  } catch (_) {
+    return [];
+  }
+}
+
+/// Diffuse un événement de présence à tous les contacts en ligne
+async function broadcastPresence(userId, type) {
+  const contacts = await getContacts(userId);
+  for (const cid of contacts) {
+    sendTo(cid, { type, userId });
+  }
+}
+
 // ── API Routes ────────────────────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', ts: new Date() }));
+
+// Retourne quels userIds (parmi ceux passés en query) sont actuellement connectés
+app.get('/presence', (req, res) => {
+  const ids = (req.query.ids || '').split(',').filter(Boolean);
+  const online = ids.filter(id => clients.has(id));
+  res.json({ online });
+});
 app.use('/auth',     authRoutes);
 app.use('/users',    usersRoutes);
 // On passe sendTo aux routes messages pour la livraison en temps réel
@@ -68,6 +105,7 @@ wss.on('connection', (ws, req) => {
           clients.set(userId, ws);
           ws.send(JSON.stringify({ type: 'auth_ok', userId }));
           console.log(`[WS] Connected: ${userId}`);
+          broadcastPresence(userId, 'user_online');
         } catch {
           ws.send(JSON.stringify({ type: 'auth_error', error: 'Token invalide' }));
           ws.close();
@@ -116,6 +154,7 @@ wss.on('connection', (ws, req) => {
     if (userId) {
       clients.delete(userId);
       console.log(`[WS] Disconnected: ${userId}`);
+      broadcastPresence(userId, 'user_offline');
     }
   });
 
