@@ -150,6 +150,18 @@ class GroupService {
     }
   }
 
+  // ── Recherche d'utilisateurs (pour ajouter des membres) ──────────────────
+
+  Future<List<Map<String, dynamic>>> searchUsers(String query) async {
+    if (!_network.isAuthenticated) return [];
+    try {
+      final results = await _network.searchUsers(query);
+      return results.map((r) => Map<String, dynamic>.from(r)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ── CRUD Groupes ──────────────────────────────────────────────────────────
 
   Future<GroupModel> createGroup({

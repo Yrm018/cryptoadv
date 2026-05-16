@@ -11,6 +11,7 @@ import '../../views/chiffrement/chiffrement_page.dart';
 import '../../views/mot_de_passe/mdp_page.dart';
 import '../../views/documentation/documentation_page.dart';
 import '../../views/chat/chat_page.dart';
+import '../../views/groups/groups_page.dart';
 import '../../views/history/history_page.dart';
 import '../../views/vpn/vpn_page.dart';
 import '../../views/settings/account_settings_dialog.dart';
@@ -166,6 +167,7 @@ class AppDrawer extends StatelessWidget {
               children: [
                 if (isAuth) ...[
                   _item(context: context, title: l.t('chat'),          icon: Icons.chat_bubble_outline_rounded, page: const ChatPage(),          active: _isActive('chat')),
+                  _item(context: context, title: 'Groupes',           icon: Icons.group_rounded,               page: const GroupsPage(),         active: _isActive('groups')),
                   _item(context: context, title: l.t('hachage'),       icon: Icons.fingerprint_rounded,         page: const HachagePage(),       active: _isActive('hachage')),
                   _item(context: context, title: l.t('chiffrement'),   icon: Icons.enhanced_encryption_rounded, page: const ChiffrementPage(),   active: _isActive('chiffrement')),
                   _item(context: context, title: l.t('mdp'),           icon: Icons.password_rounded,            page: const MdpPage(),           active: _isActive('mdp')),

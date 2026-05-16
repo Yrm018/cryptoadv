@@ -12,6 +12,7 @@ import '../../views/chiffrement/chiffrement_page.dart';
 import '../../views/mot_de_passe/mdp_page.dart';
 import '../../views/documentation/documentation_page.dart';
 import '../../views/chat/chat_page.dart';
+import '../../views/groups/groups_page.dart';
 import '../../views/history/history_page.dart';
 import '../../views/vpn/vpn_page.dart';
 import '../../views/settings/account_settings_dialog.dart';
@@ -345,6 +346,7 @@ class AppNavbar extends StatelessWidget {
           if (isAuth) ...[
             _glassContainer(isDark: isDark, children: [
               _navButton(context: context, text: l.t('chat'),          icon: Icons.chat_bubble_outline_rounded, page: const ChatPage(),          active: _isActive('chat'),          isDark: isDark),
+              _navButton(context: context, text: 'Groupes',           icon: Icons.group_rounded,               page: const GroupsPage(),         active: _isActive('groups'),        isDark: isDark),
               _navButton(context: context, text: l.t('hachage'),       icon: Icons.fingerprint_rounded,         page: const HachagePage(),       active: _isActive('hachage'),       isDark: isDark),
               _navButton(context: context, text: l.t('chiffrement'),   icon: Icons.enhanced_encryption_rounded, page: const ChiffrementPage(),   active: _isActive('chiffrement'),   isDark: isDark),
               _navButton(context: context, text: l.t('mdp'),           icon: Icons.password_rounded,            page: const MdpPage(),           active: _isActive('mdp'),           isDark: isDark),
