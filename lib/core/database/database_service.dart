@@ -80,6 +80,13 @@ class DatabaseService {
     return Hive.box<Map>(name);
   }
 
+  /// Box de messages VPN (chiffrés RSA) — toujours stockés localement
+  Future<Box<Map>> messagesBox(String convId) async {
+    final name = 'messages_$convId';
+    if (!Hive.isBoxOpen(name)) await Hive.openBox<Map>(name);
+    return Hive.box<Map>(name);
+  }
+
   // ── Nettoyage complet (logout ou reset) ───────────────────────────────────
   Future<void> deleteAll() async {
     await Hive.deleteFromDisk();

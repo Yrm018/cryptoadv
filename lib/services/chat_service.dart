@@ -100,17 +100,18 @@ class ChatService {
             orElse: () => null,
           );
           if (remote != null) {
-            final userData = {
-              ...remote,
-              'rsaPublicKey': remote['public_key'],
-              'photoBase64':  remote['photo_base64'],
-              'displayName':  _buildDisplayName(remote),
+            final r = Map<String, dynamic>.from(remote);
+            final userData = <String, dynamic>{
+              ...r,
+              'rsaPublicKey': r['public_key'],
+              'photoBase64':  r['photo_base64'],
+              'displayName':  _buildDisplayName(r),
             };
-            final uid = remote['id']?.toString() ?? '';
+            final uid = r['id']?.toString() ?? '';
             if (uid.isNotEmpty) {
               _userDataCache[uid] = userData;
-              if (remote['photo_base64'] != null) {
-                _userPhotoCache[uid] = remote['photo_base64'] as String;
+              if (r['photo_base64'] != null) {
+                _userPhotoCache[uid] = r['photo_base64'] as String;
               }
             }
             return userData;
