@@ -35,6 +35,7 @@ app.use('/auth',     authRoutes);
 app.use('/users',    usersRoutes);
 // On passe sendTo aux routes messages pour la livraison en temps réel
 app.use('/messages', require('./routes/messages')(sendTo));
+app.use('/groups',   require('./routes/groups')(sendTo));
 
 // ── Servir le Frontend Flutter Web ────────────────────────────────────────────
 // On sert les fichiers statiques du dossier "public" (build/web)
@@ -91,6 +92,16 @@ wss.on('connection', (ws, req) => {
         if (!userId) return;
         const target = msg.targetId;
         sendTo(target, { ...msg, senderId: userId });
+        break;
+      }
+
+      // ── Message groupe (livraison WS directe en backup) ─────────────────────
+      case 'group_message': {
+        if (!userId) return;
+        // La livraison principale passe par REST POST /groups/:id/messages
+        // Ce case sert de fallback si le client envoie directement en WS
+        const { groupId: gid, ...gpayload } = msg;
+        if (gid) sendTo(gid, { type: 'group_message', ...gpayload, senderId: userId });
         break;
       }
 

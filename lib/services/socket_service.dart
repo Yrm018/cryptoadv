@@ -28,6 +28,13 @@ class SocketService extends ChangeNotifier {
   void Function(Map<String, dynamic>)? onCallEnd;
   void Function(Map<String, dynamic>)? onCallReject;
 
+  // Callbacks groupes
+  void Function(Map<String, dynamic>)? onGroupMessage;
+  void Function(Map<String, dynamic>)? onGroupCreated;
+  void Function(Map<String, dynamic>)? onGroupAdded;
+  void Function(Map<String, dynamic>)? onGroupRemoved;
+  void Function(Map<String, dynamic>)? onGroupDeleted;
+
   bool get isConnected => _connected;
 
   // ── Connexion ─────────────────────────────────────────────────────────────
@@ -161,6 +168,21 @@ class SocketService extends ChangeNotifier {
         break;
       case 'call_reject':
         onCallReject?.call(msg);
+        break;
+      case 'group_message':
+        onGroupMessage?.call(msg);
+        break;
+      case 'group_created':
+        onGroupCreated?.call(msg);
+        break;
+      case 'group_added':
+        onGroupAdded?.call(msg);
+        break;
+      case 'group_removed':
+        onGroupRemoved?.call(msg);
+        break;
+      case 'group_deleted':
+        onGroupDeleted?.call(msg);
         break;
       case 'pong':
         break;
