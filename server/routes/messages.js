@@ -15,13 +15,16 @@ module.exports = function messagesRouter(sendTo) {
         `SELECT c.*,
                 u.username AS other_username, u.first_name, u.last_name,
                 u.photo_base64, u.email AS other_email, u.id AS other_id,
-                (SELECT cipher_text FROM messages m
-                 WHERE m.conversation_id = c.id
-                 ORDER BY m.timestamp DESC LIMIT 1) AS last_cipher
+                u.public_key,
+                (SELECT type      FROM messages m WHERE m.conversation_id = c.id ORDER BY m.timestamp DESC LIMIT 1) AS last_type,
+                (SELECT timestamp FROM messages m WHERE m.conversation_id = c.id ORDER BY m.timestamp DESC LIMIT 1) AS last_timestamp
          FROM conversations c
          JOIN users u ON u.id = CASE WHEN c.user1_id = $1 THEN c.user2_id ELSE c.user1_id END
          WHERE c.user1_id = $1 OR c.user2_id = $1
-         ORDER BY c.created_at DESC`,
+         ORDER BY COALESCE(
+           (SELECT timestamp FROM messages m WHERE m.conversation_id = c.id ORDER BY m.timestamp DESC LIMIT 1),
+           c.created_at
+         ) DESC`,
         [req.user.id]
       );
       res.json(rows);
