@@ -46,6 +46,9 @@ class AuthProvider extends ChangeNotifier {
     final Map? userMap = response['user'];
 
     if (token != null && userMap != null) {
+      // IMPORTANT : Enregistrer le token pour les futurs appels API (recherche, messages, etc.)
+      _network.setToken(token);
+      
       _currentUser = LocalUser.fromMap(userMap);
       await _socket.connect(token);
       notifyListeners();
@@ -89,11 +92,6 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> updateUsername(String newUsername) async {
     if (_currentUser == null) return;
-    // On peut utiliser updateProfile du backend pour changer le pseudo si l'API le permet
-    // Ici on suppose que le backend traite 'username' ou qu'on a un endpoint dédié.
-    // Pour l'instant, on simule ou on utilise updateProfile si adapté.
-    // Note: Le NetworkService.updateProfile ne semble pas prendre username.
-    // Je vais quand même notifier pour l'UI.
     notifyListeners();
   }
 
@@ -104,7 +102,6 @@ class AuthProvider extends ChangeNotifier {
     required String newPassword,
   }) async {
     if (_currentUser == null) return;
-    // Appel au service auth local ou network si implémenté
     await _authService.updatePassword(
       userId: _currentUser!.id,
       currentPassword: currentPassword,

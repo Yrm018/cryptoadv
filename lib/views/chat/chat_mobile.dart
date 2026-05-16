@@ -63,8 +63,8 @@ class _ChatMobileState extends State<ChatMobile> {
     if (mounted) setState(() => _currentUserHasRsa = hasKeys);
   }
 
-  void _checkReceiverRsa(String email) {
-    final hasKeys = _chatService.receiverHasRsaKeys(email.trim().toLowerCase());
+  Future<void> _checkReceiverRsa(String email) async {
+    final hasKeys = await _chatService.receiverHasRsaKeys(email.trim().toLowerCase());
     if (mounted) setState(() => _receiverHasRsa = hasKeys);
   }
 
@@ -139,7 +139,7 @@ class _ChatMobileState extends State<ChatMobile> {
     final email = emailController.text.trim();
     if (email.isEmpty) return;
     try {
-      final userDoc = _chatService.getUserByEmail(email);
+      final userDoc = await _chatService.getUserByEmail(email);
       if (userDoc == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -152,7 +152,7 @@ class _ChatMobileState extends State<ChatMobile> {
         userDoc['id'] as String,
         email,
       );
-      _checkReceiverRsa(email);
+      await _checkReceiverRsa(email);
       if (mounted) {
         setState(() {
           activeConversationId = id;
@@ -572,7 +572,7 @@ class _ChatMobileState extends State<ChatMobile> {
         msg.senderName.isNotEmpty ? msg.senderName : msg.senderEmail;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(8.0),
       child: Row(
         mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -706,7 +706,7 @@ class _ChatMobileState extends State<ChatMobile> {
       width: 220,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: isMe ? Colors.blue.withOpacity(0.85) : Colors.white.withOpacity(0.9),
+        color: isMe ? Colors.blue.withOpacity(0.85) : Colors.white.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(

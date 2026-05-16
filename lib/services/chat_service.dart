@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/database/database_service.dart';
 import '../models/chat_message_model.dart';
@@ -9,6 +10,7 @@ import '../services/auth_service.dart';
 import '../backend/crypto/cryptavance.dart';
 import '../backend/security/rsa_service.dart';
 import '../services/socket_service.dart';
+import '../services/network_service.dart';
 
 /// ChatService — chat local avec hive + intégration WebSocket/Network
 class ChatService {
@@ -18,6 +20,7 @@ class ChatService {
   final _db          = DatabaseService.instance;
   final _authService = AuthService();
   final _socket      = SocketService.instance;
+  final _network     = NetworkService.instance;
 
   final Map<String, StreamController<List<ChatMessageModel>>> _msgControllers = {};
   final _convController = StreamController<List<Map<String, dynamic>>>.broadcast();
@@ -41,17 +44,46 @@ class ChatService {
 
   // ── Utilisateurs ──────────────────────────────────────────────────────────
 
-  Map<String, dynamic>? getUserByEmail(String emailOrUsername) {
+  /// Cherche un utilisateur par email ou username (Local + Remote)
+  Future<Map<String, dynamic>?> getUserByEmail(String emailOrUsername) async {
     final normalized = emailOrUsername.trim().toLowerCase();
+    
+    // 1. Chercher d'abord dans la base locale (utilisateurs déjà rencontrés)
     var found = _db.users.values.firstWhere(
-      (u) => u['email'] == normalized, orElse: () => {},
+      (u) => u['email'] == normalized || (u['username'] as String?)?.toLowerCase() == normalized, 
+      orElse: () => {},
     );
-    if (found.isEmpty) {
-      found = _db.users.values.firstWhere(
-        (u) => (u['username'] as String?)?.toLowerCase() == normalized, orElse: () => {},
-      );
+    if (found.isNotEmpty) return Map<String, dynamic>.from(found);
+
+    // 2. Si pas trouvé, chercher sur le serveur EC2
+    if (_network.isAuthenticated) {
+      try {
+        final results = await _network.searchUsers(normalized);
+        if (results.isNotEmpty) {
+          // On cherche une correspondance exacte dans les résultats
+          final remote = results.firstWhere(
+            (u) => (u['email'] as String).toLowerCase() == normalized || 
+                   (u['username'] as String).toLowerCase() == normalized,
+            orElse: () => null,
+          );
+          
+          if (remote != null) {
+            // Normalisation des champs pour l'UI (mapping snake_case -> camelCase)
+            return {
+              ...remote,
+              'rsaPublicKey': remote['public_key'],
+              'photoBase64': remote['photo_base64'],
+              'displayName': '${remote['first_name'] ?? ''} ${remote['last_name'] ?? ''}'.trim().isNotEmpty 
+                  ? '${remote['first_name']} ${remote['last_name']}'
+                  : remote['username'] ?? remote['email'],
+            };
+          }
+        }
+      } catch (e) {
+        debugPrint("Erreur getUserByEmail distant: $e");
+      }
     }
-    return found.isEmpty ? null : Map<String, dynamic>.from(found);
+    return null;
   }
 
   // ── Conversations ─────────────────────────────────────────────────────────
@@ -66,7 +98,8 @@ class ChatService {
       return conversationId;
     }
 
-    final otherData     = _db.users.get(otherUserId);
+    // Récupérer les infos de l'autre utilisateur (on attend l'async ici)
+    final otherData = await getUserByEmail(otherUserEmail);
     final receiverEmail = otherData?['email'] ?? otherUserEmail;
     final receiverName  = otherData?['displayName'] ?? otherUserEmail;
 
@@ -163,7 +196,7 @@ class ChatService {
     final currentUser = await _authService.currentUser;
     if (currentUser == null) throw Exception('Utilisateur non connecté');
 
-    final receiverData = getUserByEmail(receiverEmail.trim().toLowerCase());
+    final receiverData = await getUserByEmail(receiverEmail.trim().toLowerCase());
     if (receiverData == null) throw Exception('Utilisateur introuvable');
     final receiverId   = receiverData['id'] as String;
 
@@ -183,7 +216,7 @@ class ChatService {
       final privJson = prefs.getString('rsa_priv_${currentUser.id}');
       if (privJson == null) throw Exception('rsa_keys_missing');
 
-      final receiverPubJson = receiverData['rsaPublicKey'] as String?;
+      final receiverPubJson = (receiverData['rsaPublicKey'] ?? receiverData['public_key']) as String?;
       if (receiverPubJson == null) throw Exception('rsa_receiver_no_keys');
 
       final privKey        = RsaService.decodePrivateKey(privJson);
@@ -351,8 +384,9 @@ class ChatService {
     return prefs.containsKey('rsa_priv_${user.id}');
   }
 
-  bool receiverHasRsaKeys(String emailOrUsername) {
-    final data = getUserByEmail(emailOrUsername);
-    return data?['rsaPublicKey'] != null;
+  /// Vérifie si le destinataire a des clés RSA (Local + Remote)
+  Future<bool> receiverHasRsaKeys(String emailOrUsername) async {
+    final data = await getUserByEmail(emailOrUsername);
+    return data?['rsaPublicKey'] != null || data?['public_key'] != null;
   }
 }

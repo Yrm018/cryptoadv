@@ -63,8 +63,8 @@ class _ChatDesktopState extends State<ChatDesktop> {
     if (mounted) setState(() => _currentUserHasRsa = hasKeys);
   }
 
-  void _checkReceiverRsa(String email) {
-    final hasKeys = _chatService.receiverHasRsaKeys(email.trim().toLowerCase());
+  Future<void> _checkReceiverRsa(String email) async {
+    final hasKeys = await _chatService.receiverHasRsaKeys(email.trim().toLowerCase());
     if (mounted) setState(() => _receiverHasRsa = hasKeys);
   }
 
@@ -141,7 +141,7 @@ class _ChatDesktopState extends State<ChatDesktop> {
     if (email.isEmpty) return;
     setState(() => isLoadingConversation = true);
     try {
-      final userDoc = _chatService.getUserByEmail(email);
+      final userDoc = await _chatService.getUserByEmail(email);
       if (userDoc == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -153,7 +153,7 @@ class _ChatDesktopState extends State<ChatDesktop> {
         userDoc['id'] as String,
         email,
       );
-      _checkReceiverRsa(email);
+      await _checkReceiverRsa(email);
       if (mounted) setState(() => activeConversationId = conversationId);
     } catch (e) {
       if (mounted) {
@@ -450,12 +450,12 @@ class _ChatDesktopState extends State<ChatDesktop> {
           style: const TextStyle(color: Colors.white38, fontSize: 11),
           maxLines: 1,
           overflow: TextOverflow.ellipsis),
-      onTap: () {
+      onTap: () async {
         setState(() {
           activeConversationId = id;
           emailController.text = conv['email'];
         });
-        _checkReceiverRsa(conv['email'] as String);
+        await _checkReceiverRsa(conv['email'] as String);
       },
     );
   }
