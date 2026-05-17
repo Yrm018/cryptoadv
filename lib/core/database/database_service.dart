@@ -31,14 +31,10 @@ class DatabaseService {
   // On centralise les noms ici pour éviter les fautes de frappe.
   // Si tu changes un nom, tu le changes UNE seule fois ici.
   //
-  static const String usersBox         = 'users';
-  static const String conversationsBox = 'conversations';
-  // Pour history et passwords on utilise un box par userId :
-  //   'history_<userId>'  et  'passwords_<userId>'
-  // Ça évite d'avoir à filtrer par userId à chaque requête.
+  static const String usersBox = 'users';
+  // History et passwords : une box par userId
   static String historyBoxName(String userId)   => 'history_$userId';
   static String passwordsBoxName(String userId) => 'passwords_$userId';
-  static String messagesBoxName(String convId)  => 'messages_$convId';
 
   // ── Initialisation ─────────────────────────────────────────────────────────
   //
@@ -54,7 +50,6 @@ class DatabaseService {
     // On ouvre les boxes globales au démarrage (les boxes par userId
     // sont ouvertes à la demande dans les services)
     await Hive.openBox<Map>(usersBox);
-    await Hive.openBox<Map>(conversationsBox);
 
     _initialized = true;
   }
@@ -65,8 +60,7 @@ class DatabaseService {
   //   final usersBox = DatabaseService.instance.users;
   //   await usersBox.put(userId, userMap);
   //
-  Box<Map> get users         => Hive.box<Map>(usersBox);
-  Box<Map> get conversations => Hive.box<Map>(conversationsBox);
+  Box<Map> get users => Hive.box<Map>(usersBox);
 
   // Ces boxes sont ouvertes à la demande (lazy) car on ne connaît
   // le userId qu'après la connexion.
@@ -86,11 +80,10 @@ class DatabaseService {
     return Hive.box<Map>(name);
   }
 
+  /// Box de messages VPN (chiffrés RSA) — toujours stockés localement
   Future<Box<Map>> messagesBox(String convId) async {
-    final name = messagesBoxName(convId);
-    if (!Hive.isBoxOpen(name)) {
-      await Hive.openBox<Map>(name);
-    }
+    final name = 'messages_$convId';
+    if (!Hive.isBoxOpen(name)) await Hive.openBox<Map>(name);
     return Hive.box<Map>(name);
   }
 

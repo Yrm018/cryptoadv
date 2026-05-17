@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../models/certificate_model.dart';
 import 'rsa_service.dart';
+import 'keygen.dart';
 
 /// PkiService — autorité de certification locale (hive).
 /// La CA (clé + certs + CRL) est stockée dans un box hive dédié.
@@ -23,14 +24,19 @@ class PkiService {
     final box = await _box;
     final existing = box.get('ca');
     if (existing != null) {
-      return {
-        'pub': existing['publicKey'] as String,
-        'priv': existing['privateKey'] as String,
-      };
+      final pub  = existing['publicKey']?.toString();
+      final priv = existing['privateKey']?.toString();
+      if (pub != null && priv != null) {
+        return {'pub': pub, 'priv': priv};
+      }
+      // Corrupted CA entry — regenerate
+      await box.delete('ca');
     }
-    final pair = RsaService.generateKeyPair();
-    final pub = RsaService.encodePublicKey(pair.publicKey);
-    final priv = RsaService.encodePrivateKey(pair.privateKey);
+    // Use platform key generation (Web Crypto on web, isolate on native)
+    // to avoid blocking the JS event loop with synchronous PointyCastle crypto.
+    final keys = await generateKeyPairPlatform();
+    final pub  = keys['pub']!;
+    final priv = keys['priv']!;
     await box.put('ca', {'publicKey': pub, 'privateKey': priv});
     return {'pub': pub, 'priv': priv};
   }

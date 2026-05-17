@@ -14,8 +14,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
 
-  # Base de données — hive fonctionne sur mobile, desktop ET web (IndexedDB)
-  # Aucune génération de code requise, zéro dépendance native
+  # Base de données — hive (mobile, desktop, web / IndexedDB)
   hive: ^2.2.3
   hive_flutter: ^1.1.0
 
@@ -25,11 +24,20 @@ dependencies:
   pointycastle: ^3.9.1
 
   # UI & Utils
-  cupertino_icons: ^1.0.8
+  cupertino_icons: ^1.0.9
   provider: ^6.1.5+1
-  shared_preferences: ^2.5.4
+  shared_preferences: ^2.5.5
   url_launcher: ^6.3.2
   file_picker: ^8.3.7
+  path_provider: ^2.1.5
+
+  # Audio (Messages vocaux)
+  record: ^6.2.0
+  audioplayers: ^5.2.1
+
+  # Réseau — EC2 backend
+  http: ^1.2.1
+  web_socket_channel: ^3.0.1
 
 dev_dependencies:
   flutter_test:

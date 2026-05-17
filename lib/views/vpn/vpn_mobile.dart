@@ -49,15 +49,19 @@ class _VpnMobileState extends State<VpnMobile> with SingleTickerProviderStateMix
   }
 
   Future<void> _loadPkiStatus() async {
-    final has = await _vpnService.hasKeys();
-    if (mounted) setState(() => _hasKeys = has);
-    if (has) _loadCertificate();
+    try {
+      final has = await _vpnService.hasKeys();
+      if (mounted) setState(() => _hasKeys = has);
+      if (has) _loadCertificate();
+    } catch (_) {}
   }
 
   Future<void> _loadCertificate() async {
-    final cert = await _vpnService.getMyCertificate();
-    final pub  = await _vpnService.getMyPublicKey();
-    if (mounted) setState(() { _myCert = cert; _myPublicKey = pub; });
+    try {
+      final cert = await _vpnService.getMyCertificate();
+      final pub  = await _vpnService.getMyPublicKey();
+      if (mounted) setState(() { _myCert = cert; _myPublicKey = pub; });
+    } catch (_) {}
   }
 
   Future<void> _generateKeys(AppL10n l) async {
@@ -189,6 +193,15 @@ class _VpnMobileState extends State<VpnMobile> with SingleTickerProviderStateMix
         const SizedBox(height: 16),
         Text(l.t('vpn_gen_keys_loading'),
           style: const TextStyle(color: Colors.white54)),
+        const SizedBox(height: 12),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 32),
+          child: Text(
+            '⏳ Génération RSA 2048-bit...\nCela peut prendre 20-30 secondes,\nne quittez pas la page.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.orange, fontSize: 12),
+          ),
+        ),
       ]));
     }
     if (!_hasKeys) {

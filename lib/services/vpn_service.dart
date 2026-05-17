@@ -6,9 +6,11 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/database/database_service.dart';
 import '../services/auth_service.dart';
+import '../services/network_service.dart';
 import '../backend/crypto/cryptavance.dart';
 import '../backend/security/rsa_service.dart';
 import '../backend/security/pki_service.dart';
+import '../backend/security/keygen.dart';
 import '../models/vpn_message_model.dart';
 import '../models/certificate_model.dart';
 
@@ -28,8 +30,9 @@ class VpnDecryptResult {
 }
 
 class VpnService {
-  final _db = DatabaseService.instance;
-  final _auth = AuthService();
+  final _db      = DatabaseService.instance;
+  final _auth    = AuthService();
+  final _network = NetworkService.instance;
 
   // Récupère l'utilisateur courant (async car hive)
   Future<LocalUser> _getUser() async {
@@ -53,25 +56,42 @@ class VpnService {
 
   Future<void> generateAndRegisterKeys() async {
     final user = await _getUser();
-    final keys = await compute(generateKeyPairIsolated, 2048);
-    final pubJson = keys['pub']!;
+
+    // Web → window.crypto.subtle (non-bloquant, ~100ms)
+    // Native → compute() dans un isolate séparé
+    final keys = await generateKeyPairPlatform();
+    final pubJson  = keys['pub']!;
     final privJson = keys['priv']!;
 
-    // Clé privée : stockée localement (jamais partagée)
+    // 1. Clé privée : stockée localement uniquement (jamais partagée)
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('rsa_priv_${user.id}', privJson);
 
-    // Clé publique + serial : stockés dans le profil hive de l'utilisateur
-    final userData = Map<String, dynamic>.from(_db.users.get(user.id) ?? {});
+    // 2. Clé publique : Hive local
+    final userData = Map<String, dynamic>.from(_db.users.get(user.id) ?? {
+      'id':    user.id,
+      'email': user.email,
+      'username': user.username,
+    });
     userData['rsaPublicKey'] = pubJson;
     await _db.users.put(user.id, userData);
 
+    // 3. Clé publique : uploadée sur le serveur EC2
+    //    → les autres utilisateurs peuvent la récupérer via /users/search
+    if (_network.isAuthenticated) {
+      try {
+        await _network.updateProfile(publicKey: pubJson);
+      } catch (e) {
+        debugPrint('[VpnService] Upload clé publique échoué: $e');
+      }
+    }
+
+    // 4. Certificat X.509 local
     final cert = await PkiService.issueCertificate(
       userEmail: user.email,
-      userUid: user.id,
+      userUid:   user.id,
       userPublicKeyJson: pubJson,
     );
-
     userData['rsaCertSerial'] = cert.serialNumber;
     await _db.users.put(user.id, userData);
   }
@@ -220,12 +240,63 @@ class VpnService {
     await PkiService.revokeCertificate(serial);
   }
 
-  Future<void> revokeUserByEmail(String email) async {
-    final uid = _findUidByEmail(email);
+  Future<void> revokeUserByEmail(String query) async {
+    final normalized = query.trim().toLowerCase();
+    if (normalized.isEmpty) throw Exception('Champ vide.');
+
+    // 1. Chercher d'abord dans le cache Hive local
+    String? uid = _findUidByEmail(normalized);
+
+    // 2. Si pas trouvé localement → interroger le serveur (email ou username)
+    if (uid == null && _network.isAuthenticated) {
+      try {
+        final results = await _network.searchUsers(normalized);
+        if (results.isNotEmpty) {
+          final match = results.firstWhere(
+            (u) =>
+                (u['email']    as String?)?.toLowerCase() == normalized ||
+                (u['username'] as String?)?.toLowerCase() == normalized,
+            orElse: () => results.first,
+          );
+          uid = match['id']?.toString();
+        }
+      } catch (e) {
+        debugPrint('[VpnService] searchUsers: $e');
+      }
+    }
+
     if (uid == null) throw Exception('Utilisateur introuvable.');
-    final cert = await PkiService.getCertificate(uid);
-    if (cert == null) throw Exception('Certificat introuvable.');
-    await PkiService.revokeCertificate(cert.serialNumber);
+
+    // 3. Récupérer ou créer le certificat pour pouvoir le révoquer
+    CertificateData? cert = await PkiService.getCertificate(uid);
+    if (cert == null) {
+      await PkiService.revokeCertificate('revoked_$uid');
+    } else {
+      await PkiService.revokeCertificate(cert.serialNumber);
+    }
+
+    // 4. Stocker le userId bloqué dans SharedPreferences (blocklist locale)
+    final prefs = await SharedPreferences.getInstance();
+    final blocked = prefs.getStringList('blocked_users') ?? [];
+    if (!blocked.contains(uid)) {
+      blocked.add(uid);
+      await prefs.setStringList('blocked_users', blocked);
+    }
+  }
+
+  /// Vérifie si un userId est bloqué (révoqué localement)
+  static Future<bool> isUserBlocked(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final blocked = prefs.getStringList('blocked_users') ?? [];
+    return blocked.contains(userId);
+  }
+
+  /// Débloquer un utilisateur (retirer de la CRL et de la blocklist)
+  Future<void> unblockUser(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final blocked = prefs.getStringList('blocked_users') ?? [];
+    blocked.remove(userId);
+    await prefs.setStringList('blocked_users', blocked);
   }
 
   Future<List<String>> getCrl() => PkiService.getCrl();

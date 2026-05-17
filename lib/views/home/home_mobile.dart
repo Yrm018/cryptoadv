@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../components/backround.dart';
 import '../../core/localization/app_l10n.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/locale_provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../widgets/common/app_drawer.dart';
+import '../auth/auth_page.dart';
 import '../mot_de_passe/mdp_page.dart';
 import '../chiffrement/chiffrement_page.dart';
 import '../documentation/documentation_page.dart';
@@ -14,6 +19,9 @@ class HomeMobile extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final l = AppL10n.of(context);
+    final bool isAuth      = context.watch<AuthProvider>().isAuthenticated;
+    final themeProvider    = context.watch<ThemeProvider>();
+    final localeProvider   = context.watch<LocaleProvider>();
 
     return Scaffold(
       drawer: const AppDrawer(currentPage: 'home'),
@@ -22,6 +30,48 @@ class HomeMobile extends StatelessWidget {
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black),
+        actions: [
+          // ── Toggle thème ────────────────────────────────────────────────
+          IconButton(
+            onPressed: () => themeProvider.toggleTheme(!isDark),
+            icon: Icon(
+              isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+              color: isDark ? Colors.yellow.shade300 : Colors.indigo.shade400,
+              size: 20,
+            ),
+            tooltip: isDark ? l.t('light_mode') : l.t('dark_mode'),
+          ),
+          // ── Sélecteur langue compact ────────────────────────────────────
+          PopupMenuButton<String>(
+            onSelected: (code) => localeProvider.setLocale(code),
+            icon: Text(
+              localeProvider.languageCode == 'fr' ? '🇫🇷'
+                  : localeProvider.languageCode == 'en' ? '🇬🇧' : '🇸🇦',
+              style: const TextStyle(fontSize: 20),
+            ),
+            itemBuilder: (_) => [
+              PopupMenuItem(value: 'fr', child: Row(children: [
+                const Text('🇫🇷', style: TextStyle(fontSize: 16)),
+                const SizedBox(width: 8),
+                Text(l.t('french'), style: TextStyle(
+                    fontWeight: localeProvider.languageCode == 'fr' ? FontWeight.bold : FontWeight.normal)),
+              ])),
+              PopupMenuItem(value: 'en', child: Row(children: [
+                const Text('🇬🇧', style: TextStyle(fontSize: 16)),
+                const SizedBox(width: 8),
+                Text(l.t('english'), style: TextStyle(
+                    fontWeight: localeProvider.languageCode == 'en' ? FontWeight.bold : FontWeight.normal)),
+              ])),
+              PopupMenuItem(value: 'ar', child: Row(children: [
+                const Text('🇸🇦', style: TextStyle(fontSize: 16)),
+                const SizedBox(width: 8),
+                Text(l.t('arabic'), style: TextStyle(
+                    fontWeight: localeProvider.languageCode == 'ar' ? FontWeight.bold : FontWeight.normal)),
+              ])),
+            ],
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       extendBodyBehindAppBar: true,
       body: Stack(
@@ -70,11 +120,26 @@ class HomeMobile extends StatelessWidget {
                   ),
                   const SizedBox(height: 30),
                   _actionButton(
-                    label: l.t('start_now'),
+                    label: isAuth ? "${l.t('our_tools')} →" : "${l.t('start_now')} →",
                     isPrimary: true,
                     isDark: isDark,
-                    onTap: () {},
+                    onTap: () {
+                      if (!isAuth) {
+                        Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const AuthPage(initialSignup: true)));
+                      }
+                    },
                   ),
+                  if (!isAuth) ...[
+                    const SizedBox(height: 12),
+                    _actionButton(
+                      label: l.t('login_btn'),
+                      isPrimary: false,
+                      isDark: isDark,
+                      onTap: () => Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const AuthPage())),
+                    ),
+                  ],
                   const SizedBox(height: 60),
                   Text(
                     l.t('our_tools'),
@@ -86,11 +151,11 @@ class HomeMobile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 30),
-                  _featureCard(context, l.t('chiffrement'), l.t('feat_chiffrement_desc_mobile'), Icons.description, const ChiffrementPage(), isDark),
+                  _featureCard(context, l.t('chiffrement'), l.t('feat_chiffrement_desc_mobile'), Icons.description, isAuth ? const ChiffrementPage() : null, isDark),
                   const SizedBox(height: 20),
-                  _featureCard(context, l.t('mdp'), l.t('feat_mdp_desc_mobile'), Icons.lock, const MdpPage(), isDark),
+                  _featureCard(context, l.t('mdp'), l.t('feat_mdp_desc_mobile'), Icons.lock, isAuth ? const MdpPage() : null, isDark),
                   const SizedBox(height: 20),
-                  _featureCard(context, l.t('feat_vpn_title'), l.t('feat_vpn_desc_mobile'), Icons.vpn_lock_rounded, const VpnPage(), isDark),
+                  _featureCard(context, l.t('feat_vpn_title'), l.t('feat_vpn_desc_mobile'), Icons.vpn_lock_rounded, isAuth ? const VpnPage() : null, isDark),
                   const SizedBox(height: 20),
                   _featureCard(context, l.t('documentation'), l.t('feat_doc_desc_mobile'), Icons.menu_book, const DocumentationPage(), isDark),
                   const SizedBox(height: 40),

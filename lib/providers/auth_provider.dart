@@ -1,26 +1,23 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
+import '../services/chat_service.dart';
+import '../services/network_service.dart';
+import '../services/socket_service.dart';
+
+const _kSavedToken = 'saved_jwt_token';
 
 /// AuthProvider — expose l'utilisateur connecté à toute l'application.
-///
-/// C'est le remplacement de FirebaseAuth.instance.currentUser.
-/// Toutes les vues qui ont besoin du userId font maintenant :
-///
-///   context.read<AuthProvider>().currentUser?.id
-///
-/// Pourquoi un Provider ?
-/// Sans Provider, chaque vue appellerait AuthService().currentUser qui
-/// fait une lecture SharedPreferences + une requête SQLite à chaque fois.
-/// Avec Provider, on charge une seule fois au démarrage et on notifie
-/// les widgets quand l'état change (connexion/déconnexion).
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
+  final NetworkService _network = NetworkService.instance;
+  final SocketService _socket = SocketService.instance;
 
   // L'utilisateur actuellement connecté (null = personne)
   LocalUser? _currentUser;
   LocalUser? get currentUser => _currentUser;
 
-  // true pendant le chargement initial (splash screen / vérification de session)
+  // true pendant le chargement initial
   bool _isLoading = true;
   bool get isLoading => _isLoading;
 
@@ -28,16 +25,30 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _currentUser != null;
 
   AuthProvider() {
-    // Dès la création du Provider (au démarrage de l'app),
-    // on vérifie si une session existe déjà dans SharedPreferences
     _init();
   }
 
-  /// Charge l'utilisateur depuis la session sauvegardée.
+  /// Charge l'utilisateur et le token JWT depuis la session sauvegardée.
   Future<void> _init() async {
     _currentUser = await _authService.currentUser;
+
+    // Restaurer le token JWT et reconnecter le socket si l'utilisateur est connu
+    if (_currentUser != null) {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString(_kSavedToken);
+      if (token != null) {
+        _network.setToken(token);
+        ChatService.instance.listenToReadReceipts();
+        await _socket.connect(token);
+        // Récupérer les messages manqués pendant la déconnexion
+        ChatService.instance.syncFromServer().catchError(
+          (e) => debugPrint('[AuthProvider] sync init échoué: $e'),
+        );
+      }
+    }
+
     _isLoading = false;
-    notifyListeners(); // prévient tous les widgets qui écoutent
+    notifyListeners();
   }
 
   // ── Connexion ─────────────────────────────────────────────────────────────
@@ -46,8 +57,35 @@ class AuthProvider extends ChangeNotifier {
     required String identifier,
     required String password,
   }) async {
-    _currentUser = await _authService.signIn(identifier: identifier, password: password);
-    notifyListeners();
+    final response = await _network.login(
+      identifier: identifier,
+      password: password,
+    );
+
+    final String? token = response['token'];
+    final Map? userMap = response['user'];
+
+    if (token != null && userMap != null) {
+      // Persister le token JWT pour la reconnexion après rechargement de page
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kSavedToken, token);
+
+      _network.setToken(token);
+      ChatService.instance.listenToReadReceipts();
+
+      // Sauvegarder la session localement (SharedPreferences + Hive)
+      // afin que ChatService.currentUser puisse retrouver l'utilisateur.
+      await _authService.saveServerSession(Map<String, dynamic>.from(userMap!));
+
+      _currentUser = LocalUser.fromMap(userMap!);
+      await _socket.connect(token);
+      notifyListeners();
+
+      // Synchroniser les conversations et messages manqués depuis le serveur
+      ChatService.instance.syncFromServer().catchError(
+        (e) => debugPrint('[AuthProvider] sync échoué: $e'),
+      );
+    }
   }
 
   // ── Inscription ───────────────────────────────────────────────────────────
@@ -60,23 +98,33 @@ class AuthProvider extends ChangeNotifier {
     required String lastName,
     String? displayName,
   }) async {
-    _currentUser = await _authService.signUp(
+    await _network.register(
       email: email,
-      password: password,
       username: username,
       firstName: firstName,
       lastName: lastName,
-      displayName: displayName,
+      password: password,
     );
+
+    await signIn(identifier: username, password: password);
+  }
+
+  // ── Mise à jour du profil ──────────────────────────────────────────────────
+
+  Future<void> updateProfile({String? firstName, String? lastName}) async {
+    if (_currentUser == null) return;
+    final response = await _network.updateProfile(
+      firstName: firstName,
+      lastName: lastName,
+    );
+    _currentUser = LocalUser.fromMap(response);
     notifyListeners();
   }
 
   // ── Mise à jour du nom d'utilisateur ─────────────────────────────────────
 
   Future<void> updateUsername(String newUsername) async {
-    final userId = _currentUser?.id;
-    if (userId == null) return;
-    _currentUser = await _authService.updateUsername(userId: userId, newUsername: newUsername);
+    if (_currentUser == null) return;
     notifyListeners();
   }
 
@@ -86,40 +134,32 @@ class AuthProvider extends ChangeNotifier {
     required String currentPassword,
     required String newPassword,
   }) async {
-    final userId = _currentUser?.id;
-    if (userId == null) return;
+    if (_currentUser == null) return;
     await _authService.updatePassword(
-      userId: userId,
+      userId: _currentUser!.id,
       currentPassword: currentPassword,
       newPassword: newPassword,
     );
   }
 
-  // ── Mise à jour du profil (prénom / nom) ──────────────────────────────────
-
-  Future<void> updateProfile({String? firstName, String? lastName}) async {
-    final userId = _currentUser?.id;
-    if (userId == null) return;
-    _currentUser = await _authService.updateProfile(
-      userId: userId,
-      firstName: firstName,
-      lastName: lastName,
-    );
-    notifyListeners();
-  }
-
   // ── Mise à jour de la photo de profil ────────────────────────────────────
 
   Future<void> updatePhoto(String? base64Image) async {
-    final userId = _currentUser?.id;
-    if (userId == null) return;
-    _currentUser = await _authService.updatePhoto(userId: userId, base64Image: base64Image);
+    if (_currentUser == null) return;
+    final response = await _network.updateProfile(
+      photoBase64: base64Image,
+    );
+    _currentUser = LocalUser.fromMap(response);
     notifyListeners();
   }
 
   // ── Déconnexion ───────────────────────────────────────────────────────────
 
   Future<void> signOut() async {
+    await _socket.disconnect();
+    _network.clearToken();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kSavedToken);
     await _authService.signOut();
     _currentUser = null;
     notifyListeners();

@@ -43,15 +43,21 @@ class _VpnDesktopState extends State<VpnDesktop> with SingleTickerProviderStateM
   }
 
   Future<void> _loadPkiStatus() async {
-    final has = await _vpnService.hasKeys();
-    if (mounted) setState(() => _hasKeys = has);
-    if (has) _loadCertificate();
+    try {
+      final has = await _vpnService.hasKeys();
+      if (mounted) setState(() => _hasKeys = has);
+      if (has) _loadCertificate();
+    } catch (_) {
+      // User not logged in or storage not ready — stay in no-keys state
+    }
   }
 
   Future<void> _loadCertificate() async {
-    final cert = await _vpnService.getMyCertificate();
-    final pub  = await _vpnService.getMyPublicKey();
-    if (mounted) setState(() { _myCert = cert; _myPublicKey = pub; });
+    try {
+      final cert = await _vpnService.getMyCertificate();
+      final pub  = await _vpnService.getMyPublicKey();
+      if (mounted) setState(() { _myCert = cert; _myPublicKey = pub; });
+    } catch (_) {}
   }
 
   Future<void> _generateKeys(AppL10n l) async {
@@ -206,6 +212,14 @@ class _VpnDesktopState extends State<VpnDesktop> with SingleTickerProviderStateM
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 16)),
         ),
+        if (_isGenerating) ...[
+          const SizedBox(height: 16),
+          const Text(
+            '⏳ Génération RSA 2048-bit en cours...\nCela peut prendre 20-30 secondes, ne quittez pas la page.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.orange, fontSize: 13),
+          ),
+        ],
       ]));
     }
 

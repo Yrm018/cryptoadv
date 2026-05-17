@@ -4,11 +4,9 @@ import 'package:flutter/material.dart';
 
 /// Avatar circulaire universel.
 ///
-/// Affiche la photo de profil (base64) si disponible, sinon l'initiale.
-/// Utilisé dans la navbar, le drawer, les bulles de chat et la liste
-/// des conversations.
+/// Affiche la photo de profil (base64) si disponible, sinon l'icône ou l'initiale.
 class UserAvatar extends StatelessWidget {
-  /// Image encodée en base64 (depuis Hive). null = pas de photo.
+  /// Image encodée en base64. null = pas de photo.
   final String? photoBase64;
 
   /// Lettre de secours affichée quand il n'y a pas de photo.
@@ -17,11 +15,14 @@ class UserAvatar extends StatelessWidget {
   /// Rayon du cercle (défaut 18).
   final double radius;
 
-  /// Couleur de fond quand on affiche l'initiale.
+  /// Couleur de fond quand on affiche l'initiale ou l'icône.
   final Color backgroundColor;
 
   /// Taille de la police de l'initiale (auto = radius * 0.75 si null).
   final double? fontSize;
+
+  /// Icône optionnelle à afficher à la place de l'initiale.
+  final IconData? icon;
 
   const UserAvatar({
     super.key,
@@ -30,6 +31,7 @@ class UserAvatar extends StatelessWidget {
     this.radius = 18,
     this.backgroundColor = const Color(0xFF0047AB),
     this.fontSize,
+    this.icon,
   });
 
   @override
@@ -43,8 +45,20 @@ class UserAvatar extends StatelessWidget {
           backgroundColor: backgroundColor,
         );
       } catch (_) {
-        // Base64 invalide → repli sur initiale
+        // Base64 invalide → repli
       }
+    }
+
+    if (icon != null) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: backgroundColor,
+        child: Icon(
+          icon,
+          color: Colors.white,
+          size: radius * 1.1,
+        ),
+      );
     }
 
     final letter = initial.isNotEmpty ? initial[0].toUpperCase() : '?';

@@ -3,12 +3,14 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'core/database/database_service.dart';
 import 'providers/auth_provider.dart';
+import 'providers/chat_provider.dart';
 import 'providers/history_provider.dart';
 import 'providers/locale_provider.dart';
 import 'providers/password_provider.dart';
 import 'providers/theme_provider.dart';
 import 'views/auth/auth_page.dart';
 import 'views/home/home_page.dart';
+import 'views/chat/chat_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +22,7 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => LocaleProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => ChatProvider()),
         ChangeNotifierProvider(create: (_) => HistoryProvider()),
         ChangeNotifierProvider(create: (_) => PasswordProvider()),
       ],
@@ -42,13 +45,31 @@ class CryptoAdvApp extends StatelessWidget {
 
       // ── Thème ──────────────────────────────────────────────────────────────
       themeMode: themeProvider.themeMode,
-      theme:     ThemeData(brightness: Brightness.light, primarySwatch: Colors.blue, useMaterial3: true),
-      darkTheme: ThemeData(brightness: Brightness.dark,  primarySwatch: Colors.blue, useMaterial3: true),
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF2196F3),
+          brightness: Brightness.light,
+          surface: Colors.white,
+          background: const Color(0xFFF0F4F8),
+        ),
+        scaffoldBackgroundColor: const Color(0xFFF0F4F8),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFFF0F4F8),
+          elevation: 0,
+        ),
+      ),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF2196F3),
+          brightness: Brightness.dark,
+          background: const Color(0xFF0F172A),
+        ),
+        scaffoldBackgroundColor: const Color(0xFF0F172A),
+      ),
 
       // ── Localisation & RTL ─────────────────────────────────────────────────
-      // GlobalWidgetsLocalizations gère automatiquement le sens de lecture :
-      //   locale('ar') → textDirection RTL  (droite → gauche)
-      //   locale('fr') ou ('en') → textDirection LTR (gauche → droite)
       locale: localeProvider.locale,
       supportedLocales: const [
         Locale('fr'),
@@ -66,7 +87,6 @@ class CryptoAdvApp extends StatelessWidget {
   }
 }
 
-// ─── AppRoot ───────────────────────────────────────────────────────────────────
 class AppRoot extends StatelessWidget {
   const AppRoot({super.key});
 
@@ -80,6 +100,6 @@ class AppRoot extends StatelessWidget {
         body: Center(child: CircularProgressIndicator(color: Colors.white)),
       );
     }
-    return auth.isAuthenticated ? const HomePage() : const AuthPage();
+    return auth.isAuthenticated ? const ChatPage() : const HomePage();
   }
 }

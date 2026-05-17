@@ -12,9 +12,11 @@ import '../../views/chiffrement/chiffrement_page.dart';
 import '../../views/mot_de_passe/mdp_page.dart';
 import '../../views/documentation/documentation_page.dart';
 import '../../views/chat/chat_page.dart';
+import '../../views/groups/groups_page.dart';
 import '../../views/history/history_page.dart';
 import '../../views/vpn/vpn_page.dart';
 import '../../views/settings/account_settings_dialog.dart';
+import '../../main.dart'; // Pour AppRoot
 import '../common/user_avatar.dart';
 
 class AppNavbar extends StatelessWidget {
@@ -115,7 +117,7 @@ class AppNavbar extends StatelessWidget {
           if (context.mounted) {
             Navigator.pushAndRemoveUntil(
               context,
-              MaterialPageRoute(builder: (_) => const AuthPage()),
+              MaterialPageRoute(builder: (_) => const AppRoot()),
               (route) => false,
             );
           }
@@ -126,7 +128,6 @@ class AppNavbar extends StatelessWidget {
       color: isDark ? const Color(0xFF0F172A) : Colors.white,
       elevation: 8,
       itemBuilder: (_) => [
-        // ── En-tête utilisateur ─────────────────────────────────────────────
         PopupMenuItem(
           enabled: false,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -150,7 +151,6 @@ class AppNavbar extends StatelessWidget {
 
         const PopupMenuDivider(),
 
-        // ── Paramètres du compte ────────────────────────────────────────────
         PopupMenuItem(
           value: 'account',
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -163,7 +163,6 @@ class AppNavbar extends StatelessWidget {
           ]),
         ),
 
-        // ── Mode clair / sombre ─────────────────────────────────────────────
         PopupMenuItem(
           value: 'theme',
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -179,7 +178,6 @@ class AppNavbar extends StatelessWidget {
 
         const PopupMenuDivider(),
 
-        // ── Sélection de langue ─────────────────────────────────────────────
         PopupMenuItem(
           enabled: false,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -196,7 +194,6 @@ class AppNavbar extends StatelessWidget {
 
         const PopupMenuDivider(),
 
-        // ── Déconnexion ─────────────────────────────────────────────────────
         PopupMenuItem(
           value: 'logout',
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -212,7 +209,6 @@ class AppNavbar extends StatelessWidget {
         ),
       ],
 
-      // ── Déclencheur : avatar + @username ──────────────────────────────────
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
@@ -264,7 +260,70 @@ class AppNavbar extends StatelessWidget {
         ]),
       );
 
-  // ── Build ─────────────────────────────────────────────────────────────────
+  Widget _langFlag(BuildContext context, LocaleProvider localeProvider,
+      String flag, String code, bool isDark) {
+    final active = localeProvider.languageCode == code;
+    return GestureDetector(
+      onTap: () => localeProvider.setLocale(code),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: active
+              ? (isDark ? const Color(0xFF0047AB).withOpacity(0.5) : const Color(0xFF3B82F6).withOpacity(0.15))
+              : Colors.transparent,
+          border: Border.all(
+              color: active ? const Color(0xFF7AA6FF).withOpacity(0.6) : Colors.transparent),
+        ),
+        child: Text(flag, style: const TextStyle(fontSize: 15)),
+      ),
+    );
+  }
+
+  Widget _authButtons(BuildContext context, bool isDark, AppL10n l) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      TextButton(
+        onPressed: () => Navigator.push(
+          context, MaterialPageRoute(builder: (_) => const AuthPage())),
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        ),
+        child: Text(l.t('login_btn'),
+            style: TextStyle(
+              color: isDark ? const Color(0xFFD1A7FF) : const Color(0xFF4338CA),
+              fontWeight: FontWeight.w600, fontSize: 14,
+            )),
+      ),
+      const SizedBox(width: 8),
+      Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: isDark
+                ? [const Color(0xFF00D4FF), const Color(0xFF6A5AE0)]
+                : [const Color(0xFF3B82F6), const Color(0xFF4F46E5)],
+          ),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: TextButton(
+          onPressed: () => Navigator.push(
+            context, MaterialPageRoute(
+              builder: (_) => const AuthPage(initialSignup: true))),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          ),
+          child: Text(l.t('signup_btn'),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold, fontSize: 14,
+              )),
+        ),
+      ),
+    ]);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -272,6 +331,7 @@ class AppNavbar extends StatelessWidget {
     final localeProvider = context.watch<LocaleProvider>();
     final authProvider   = context.watch<AuthProvider>();
     final bool isDark    = themeProvider.isDarkMode;
+    final bool isAuth    = authProvider.isAuthenticated;
     final username       = authProvider.currentUser?.username;
     final photoBase64    = authProvider.currentUser?.photoBase64;
     final l              = AppL10n.of(context);
@@ -283,28 +343,53 @@ class AppNavbar extends StatelessWidget {
           AnimatedLogo(size: LogoSize.md),
           const Spacer(flex: 2),
 
-          // ── Navigation principale ─────────────────────────────────────────
-          _glassContainer(isDark: isDark, children: [
-            _navButton(context: context, text: l.t('home'),          icon: Icons.home_rounded,                page: const HomePage(),          active: _isActive('home'),          isDark: isDark),
-            _navButton(context: context, text: l.t('hachage'),       icon: Icons.fingerprint_rounded,         page: const HachagePage(),       active: _isActive('hachage'),       isDark: isDark),
-            _navButton(context: context, text: l.t('chiffrement'),   icon: Icons.enhanced_encryption_rounded, page: const ChiffrementPage(),   active: _isActive('chiffrement'),   isDark: isDark),
-            _navButton(context: context, text: l.t('mdp'),           icon: Icons.password_rounded,            page: const MdpPage(),           active: _isActive('mdp'),           isDark: isDark),
-            _navButton(context: context, text: l.t('chat'),          icon: Icons.chat_bubble_outline_rounded, page: const ChatPage(),          active: _isActive('chat'),          isDark: isDark),
-            _navButton(context: context, text: l.t('vpn'),           icon: Icons.vpn_lock_rounded,            page: const VpnPage(),           active: _isActive('vpn'),           isDark: isDark),
-          ]),
+          if (isAuth) ...[
+            _glassContainer(isDark: isDark, children: [
+              _navButton(context: context, text: l.t('chat'),          icon: Icons.chat_bubble_outline_rounded, page: const ChatPage(),          active: _isActive('chat'),          isDark: isDark),
+              _navButton(context: context, text: 'Groupes',           icon: Icons.group_rounded,               page: const GroupsPage(),         active: _isActive('groups'),        isDark: isDark),
+              _navButton(context: context, text: l.t('hachage'),       icon: Icons.fingerprint_rounded,         page: const HachagePage(),       active: _isActive('hachage'),       isDark: isDark),
+              _navButton(context: context, text: l.t('chiffrement'),   icon: Icons.enhanced_encryption_rounded, page: const ChiffrementPage(),   active: _isActive('chiffrement'),   isDark: isDark),
+              _navButton(context: context, text: l.t('mdp'),           icon: Icons.password_rounded,            page: const MdpPage(),           active: _isActive('mdp'),           isDark: isDark),
+              _navButton(context: context, text: l.t('vpn'),           icon: Icons.vpn_lock_rounded,            page: const VpnPage(),           active: _isActive('vpn'),           isDark: isDark),
+            ]),
 
-          const Spacer(flex: 2),
+            const Spacer(flex: 2),
 
-          // ── Gestion + Settings ────────────────────────────────────────────
-          _glassContainer(isDark: isDark, children: [
-            _navButton(context: context, text: l.t('history'),       icon: Icons.history_rounded,   page: const HistoryPage(),       active: _isActive('history'),       isDark: isDark),
-            _navButton(context: context, text: l.t('documentation'), icon: Icons.menu_book_rounded, page: const DocumentationPage(), active: _isActive('documentation'), isDark: isDark),
-            const SizedBox(width: 6),
-            Container(width: 1, height: 20,
-                color: isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.1)),
-            const SizedBox(width: 8),
-            _settingsButton(context, themeProvider, localeProvider, isDark, username, photoBase64, l),
-          ]),
+            _glassContainer(isDark: isDark, children: [
+              _navButton(context: context, text: l.t('history'),       icon: Icons.history_rounded,   page: const HistoryPage(),       active: _isActive('history'),       isDark: isDark),
+              _navButton(context: context, text: l.t('documentation'), icon: Icons.menu_book_rounded, page: const DocumentationPage(), active: _isActive('documentation'), isDark: isDark),
+              const SizedBox(width: 6),
+              Container(width: 1, height: 20,
+                  color: isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.1)),
+              const SizedBox(width: 8),
+              _settingsButton(context, themeProvider, localeProvider, isDark, username, photoBase64, l),
+            ]),
+          ] else ...[
+            const Spacer(flex: 2),
+
+            _glassContainer(isDark: isDark, children: [
+              IconButton(
+                onPressed: () => themeProvider.toggleTheme(!isDark),
+                icon: Icon(
+                  isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+                  size: 18,
+                  color: isDark ? Colors.yellow.shade300 : Colors.indigo.shade400,
+                ),
+                tooltip: isDark ? l.t('light_mode') : l.t('dark_mode'),
+                padding: const EdgeInsets.all(6),
+                constraints: const BoxConstraints(),
+              ),
+              Container(width: 1, height: 18,
+                  color: isDark ? Colors.white.withOpacity(0.12) : Colors.black.withOpacity(0.08)),
+              const SizedBox(width: 4),
+              _langFlag(context, localeProvider, '🇫🇷', 'fr', isDark),
+              _langFlag(context, localeProvider, '🇬🇧', 'en', isDark),
+              _langFlag(context, localeProvider, '🇸🇦', 'ar', isDark),
+            ]),
+
+            const SizedBox(width: 12),
+            _authButtons(context, isDark, l),
+          ],
         ],
       ),
     );
