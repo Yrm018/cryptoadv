@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/chat_message_model.dart';
 import '../services/chat_service.dart';
 import '../services/socket_service.dart';
+import '../services/vpn_service.dart';
 import '../services/network_service.dart';
 
 class ChatProvider extends ChangeNotifier {
@@ -54,6 +55,13 @@ class ChatProvider extends ChangeNotifier {
     if (data.containsKey('msgType')) {
       data['type'] = data['msgType'];
     }
+
+    // Bloquer les messages venant d'un utilisateur révoqué
+    final senderId = data['senderId']?.toString() ?? '';
+    if (senderId.isNotEmpty && await VpnService.isUserBlocked(senderId)) {
+      return; // Message ignoré silencieusement
+    }
+
     await _chatService.saveReceivedMessage(data);
     notifyListeners();
   }

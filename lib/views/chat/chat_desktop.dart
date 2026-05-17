@@ -443,7 +443,9 @@ class _ChatDesktopState extends State<ChatDesktop> {
     final active  = activeConversationId == id;
     final otherId = conv['otherUserId'] as String? ?? '';
     final photo   = otherId.isNotEmpty ? _chatService.getUserPhoto(otherId) : null;
-    final nameStr = conv['email'] as String? ?? '';
+    final nameStr = (conv['name'] as String? ?? '').isNotEmpty
+        ? conv['name'] as String
+        : conv['email'] as String? ?? '';
 
     return AnimatedBuilder(
       animation: _presence,

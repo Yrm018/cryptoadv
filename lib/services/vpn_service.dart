@@ -240,12 +240,63 @@ class VpnService {
     await PkiService.revokeCertificate(serial);
   }
 
-  Future<void> revokeUserByEmail(String email) async {
-    final uid = _findUidByEmail(email);
+  Future<void> revokeUserByEmail(String query) async {
+    final normalized = query.trim().toLowerCase();
+    if (normalized.isEmpty) throw Exception('Champ vide.');
+
+    // 1. Chercher d'abord dans le cache Hive local
+    String? uid = _findUidByEmail(normalized);
+
+    // 2. Si pas trouvé localement → interroger le serveur (email ou username)
+    if (uid == null && _network.isAuthenticated) {
+      try {
+        final results = await _network.searchUsers(normalized);
+        if (results.isNotEmpty) {
+          final match = results.firstWhere(
+            (u) =>
+                (u['email']    as String?)?.toLowerCase() == normalized ||
+                (u['username'] as String?)?.toLowerCase() == normalized,
+            orElse: () => results.first,
+          );
+          uid = match['id']?.toString();
+        }
+      } catch (e) {
+        debugPrint('[VpnService] searchUsers: $e');
+      }
+    }
+
     if (uid == null) throw Exception('Utilisateur introuvable.');
-    final cert = await PkiService.getCertificate(uid);
-    if (cert == null) throw Exception('Certificat introuvable.');
-    await PkiService.revokeCertificate(cert.serialNumber);
+
+    // 3. Récupérer ou créer le certificat pour pouvoir le révoquer
+    CertificateData? cert = await PkiService.getCertificate(uid);
+    if (cert == null) {
+      await PkiService.revokeCertificate('revoked_$uid');
+    } else {
+      await PkiService.revokeCertificate(cert.serialNumber);
+    }
+
+    // 4. Stocker le userId bloqué dans SharedPreferences (blocklist locale)
+    final prefs = await SharedPreferences.getInstance();
+    final blocked = prefs.getStringList('blocked_users') ?? [];
+    if (!blocked.contains(uid)) {
+      blocked.add(uid);
+      await prefs.setStringList('blocked_users', blocked);
+    }
+  }
+
+  /// Vérifie si un userId est bloqué (révoqué localement)
+  static Future<bool> isUserBlocked(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final blocked = prefs.getStringList('blocked_users') ?? [];
+    return blocked.contains(userId);
+  }
+
+  /// Débloquer un utilisateur (retirer de la CRL et de la blocklist)
+  Future<void> unblockUser(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final blocked = prefs.getStringList('blocked_users') ?? [];
+    blocked.remove(userId);
+    await prefs.setStringList('blocked_users', blocked);
   }
 
   Future<List<String>> getCrl() => PkiService.getCrl();

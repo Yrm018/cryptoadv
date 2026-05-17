@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import '../services/vpn_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/chat_message_model.dart';
 import '../services/auth_service.dart';
@@ -332,6 +333,12 @@ class ChatService {
     final receiverData = await getUserByEmail(receiverEmail.trim().toLowerCase());
     if (receiverData == null) throw Exception('Utilisateur introuvable');
     final receiverId   = receiverData['id'] as String;
+
+    // Vérifier si cet utilisateur est bloqué (révoqué via CRL)
+    if (await VpnService.isUserBlocked(receiverId)) {
+      throw Exception('Cet utilisateur a été révoqué. Communication bloquée.');
+    }
+
     final conversationId = await getOrCreateConversation(receiverId, receiverEmail);
     final msgId = _generateId();
     final now   = DateTime.now().toIso8601String();
